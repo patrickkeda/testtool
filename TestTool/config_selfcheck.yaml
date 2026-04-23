@@ -1,0 +1,89 @@
+# 系统自检配置文件示例
+system_check:
+  enabled: true
+  auto_check_on_startup: true
+  check_timeout: 30000  # 总检查超时时间(毫秒)
+  
+  # 软件环境检查
+  software_environment:
+    enabled: true
+    check_python_version: true
+    min_python_version: "3.10"
+    check_dependencies: true
+    critical_dependencies:
+      - name: "PySide6"
+        min_version: "6.0.0"
+      - name: "pyserial"
+        min_version: "3.5"
+      - name: "pyvisa"
+        min_version: "1.11.0"
+      - name: "pandas"
+        min_version: "1.5.0"
+      - name: "matplotlib"
+        min_version: "3.5.0"
+      - name: "requests"
+        min_version: "2.28.0"
+      - name: "pydantic"
+        min_version: "1.10.0"
+      - name: "pyyaml"
+        min_version: "6.0"
+    check_environment_variables: true
+    required_env_vars:
+      - "PATH"
+      - "PYTHONPATH"
+  
+  # 硬件资源检查（简化）
+  hardware_resources:
+    enabled: true
+    check_disk_space: true
+    min_disk_space_gb: 1
+    check_memory: true
+    min_total_memory_gb: 4
+    min_available_memory_mb: 512
+    max_memory_usage_percent: 90
+    check_network: true
+    network_test_timeout: 5000
+  
+  # 通信接口检查
+  communication:
+    enabled: true
+    check_serial_ports: true
+    check_tcp_connections: true
+    test_timeout: 3000
+    test_ports:
+      - "COM3"
+      - "COM4"
+    test_tcp_connections:
+      - host: "192.168.1.100"
+        port: 5020
+      - host: "localhost"
+        port: 8080
+  
+  # 配置文件检查
+  config:
+    enabled: true
+    check_file_integrity: true
+    validate_parameters: true
+    config_files:
+      - "config.yaml"
+      - "test_sequence_example.yaml"
+  
+  # 仪器连接检查
+  instruments:
+    enabled: true
+    check_power_supply: true
+    test_connection: true
+    test_timeout: 5000
+    test_commands:
+      - "*IDN?"
+      - "*STB?"
+  
+  # 日志系统检查
+  logging:
+    enabled: true
+    check_directory: true
+    check_permissions: true
+    log_directories:
+      - "D:/Logs/TestTool"
+      - "D:/Logs/TestTool/Result"
+      - "D:/Logs/TestTool/System"

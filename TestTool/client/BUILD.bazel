@@ -1,0 +1,12 @@
+# VITA Engineer Client - Standalone Python Package
+# Use create_standalone_package.sh to build the complete package
+
+filegroup(
+    name = "client_package",
+    srcs = [
+        "README.md",
+        "USER_GUIDE.md",
+        "pyproject.toml",
+    ] + glob(["vita_engineer_client/**/*"]),
+    visibility = ["//visibility:public"],
+)

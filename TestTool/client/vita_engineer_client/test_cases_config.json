@@ -1,0 +1,498 @@
+{
+  "test_cases": [
+    {
+      "command": "enfac",
+      "description": "进入工程模式（前置条件）",
+      "test_case": "enfac=1,1%",
+      "enabled": true,
+      "required": true,
+      "order": 0
+    },
+    {
+      "command": "action_mode",
+      "description": "运动模式",
+      "test_cases": [
+        {
+          "description": "查询",
+          "test_case": "action_mode=0%",
+          "enabled": true
+        },
+        {
+          "description": "站立",
+          "test_case": "action_mode=1,stand%",
+          "enabled": true
+        },
+        {
+          "description": "趴下",
+          "test_case": "action_mode=1,laydown%",
+          "enabled": true
+        },
+        {
+          "description": "停止",
+          "test_case": "action_mode=2%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "version",
+      "description": "获取版本信息",
+      "test_case": "version=0%",
+      "enabled": true
+    },
+    {
+      "command": "testinfo",
+      "description": "获取标志位信息",
+      "test_cases": [
+        {
+          "description": "获取S100标志位",
+          "test_case": "testinfo=0,s100%",
+          "enabled": true
+        },
+        {
+          "description": "获取X5标志位",
+          "test_case": "testinfo=0,x5%",
+          "enabled": true
+        },
+        {
+          "description": "获取X5模组标志位",
+          "test_case": "testinfo=0,x5mod%",
+          "enabled": true
+        },
+        {
+          "description": "获取整机标志位",
+          "test_case": "testinfo=0,machine%",
+          "enabled": true
+        },
+        {
+          "description": "获取标定标志位",
+          "test_case": "testinfo=0,calib%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "tactile",
+      "description": "获取触摸状态信息",
+      "test_case": "tactile=0%",
+      "enabled": false
+    },
+    {
+      "command": "tts",
+      "description": "TTS语音播放测试",
+      "test_cases": [
+        {
+          "description": "播放默认语音",
+          "test_case": "tts=0%",
+          "enabled": true
+        },
+        {
+          "description": "播放指定文本",
+          "test_case": "tts=1,工程模式测试%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "servo",
+      "description": "舵机控制测试",
+      "test_cases": [
+        {
+          "description": "获取舵机ID配置",
+          "test_case": "servo=0%",
+          "enabled": true
+        },
+        {
+          "description": "控制yaw舵机到30度",
+          "test_case": "servo=1,2,30%",
+          "enabled": true
+        },
+        {
+          "description": "控制yaw舵机到-30度",
+          "test_case": "servo=1,2,-30%",
+          "enabled": true
+        },
+        {
+          "description": "控制yaw舵机到0度",
+          "test_case": "servo=1,2,0%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "lidar",
+      "description": "雷达测试",
+      "test_cases": [
+        {
+          "description": "查询雷达信息内参",
+          "test_case": "lidar=0%",
+          "enabled": true
+        },
+        {
+          "description": "拍摄一帧点云",
+          "test_case": "lidar=1,/tmp/engineer_test%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "fan",
+      "description": "风扇控制测试",
+      "test_cases": [
+        {
+          "description": "获取风扇0信息",
+          "test_case": "fan=0,0%",
+          "enabled": true
+        },
+        {
+          "description": "获取风扇1信息",
+          "test_case": "fan=0,1%",
+          "enabled": true
+        },
+        {
+            "description": "关闭风扇0",
+            "test_case": "fan=2,0%",
+            "enabled": true
+        },
+        {
+          "description": "打开风扇0（PWM=50）",
+          "test_case": "fan=1,0,50%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "rtc",
+      "description": "获取RTC时间",
+      "test_case": "rtc=0%",
+      "enabled": true
+    },
+    {
+      "command": "gnss",
+      "description": "获取GNSS信息",
+      "test_case": "gnss=0%",
+      "enabled": true
+    },
+    {
+      "command": "sig4g",
+      "description": "4G信号强度和网络测试",
+      "test_cases": [
+        {
+          "description": "获取4G信号强度",
+          "test_case": "sig4g=0%",
+          "enabled": true
+        },
+        {
+          "description": "4G网卡ping测试",
+          "test_case": "sig4g=1%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "camera",
+      "description": "相机测试",
+      "test_cases": [
+        {
+          "description": "获取双目内参",
+          "test_case": "camera=0%",
+          "enabled": true
+        },
+        {
+          "description": "拍摄照片",
+          "test_case": "camera=1,/tmp/engineer_test%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "ircamera",
+      "description": "拍摄红外照片",
+      "test_case": "ircamera=1,/tmp/engineer_test%",
+      "enabled": true
+    },
+    {
+      "command": "light",
+      "description": "控制耳灯测试",
+      "test_cases": [
+        {
+          "description": "关闭耳灯",
+          "test_case": "light=0%",
+          "enabled": true
+        },
+        {
+          "description": "打开红色耳灯",
+          "test_case": "light=1,r%",
+          "enabled": true
+        },
+        {
+          "description": "打开绿色耳灯",
+          "test_case": "light=1,g%",
+          "enabled": true
+        },
+        {
+          "description": "打开蓝色耳灯",
+          "test_case": "light=1,b%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "lcd",
+      "description": "LCD屏幕控制测试",
+      "test_cases": [
+        {
+          "description": "打开LCD显示白色",
+          "test_case": "lcd=1,white%",
+          "enabled": true
+        },
+        {
+          "description": "打开LCD显示黑色",
+          "test_case": "lcd=1,black%",
+          "enabled": true
+        },
+        {
+          "description": "打开LCD显示红色",
+          "test_case": "lcd=1,red%",
+          "enabled": true
+        },
+        {
+          "description": "打开LCD显示绿色",
+          "test_case": "lcd=1,green%",
+          "enabled": true
+        },
+        {
+          "description": "打开LCD显示蓝色",
+          "test_case": "lcd=1,blue%",
+          "enabled": true
+        },
+        {
+          "description": "关闭LCD",
+          "test_case": "lcd=2%",
+          "enabled": true
+        },
+        {
+          "description": "开启信息显示",
+          "test_case": "lcd=3%",
+          "enabled": true
+        },
+        {
+          "description": "关闭信息显示",
+          "test_case": "lcd=4%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "iccid",
+      "description": "获取SIM卡ICCID",
+      "test_case": "iccid=0%",
+      "enabled": true
+    },
+    {
+      "command": "imei",
+      "description": "获取模组IMEI",
+      "test_case": "imei=0%",
+      "enabled": true
+    },
+    {
+      "command": "charger",
+      "description": "获取充电信息",
+      "test_case": "charger=0%",
+      "enabled": true
+    },
+    {
+      "command": "battery",
+      "description": "获取电池信息",
+      "test_case": "battery=0%",
+      "enabled": true
+    },
+    {
+      "command": "battery",
+      "description": "检查SOC >= 20%",
+      "test_case": "battery=1,20%",
+      "enabled": true
+    },
+    {
+      "command": "fill_light",
+      "description": "补光灯控制测试",
+      "test_cases": [
+        {
+          "description": "打开补光灯",
+          "test_case": "fill_light=1%",
+          "enabled": true
+        },
+        {
+          "description": "关闭补光灯",
+          "test_case": "fill_light=0%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "socid",
+      "description": "获取SOC ID",
+      "test_case": "socid=0%",
+      "enabled": true
+    },
+    {
+      "command": "transfer",
+      "description": "文件传输测试",
+      "test_cases": [
+        {
+          "description": "从机器传输文件到电脑（需要机器上存在）",
+          "test_case": "transfer=1,/app/script/env.sh,/tmp/engineer_test%",
+          "enabled": false,
+          "note": "需要先在机器上创建测试文件，或使用已存在的文件"
+        }
+      ]
+    },
+    {
+      "command": "upload",
+      "description": "上传设备信息文件",
+      "test_case": "upload=1%",
+      "enabled": true
+    },
+    {
+      "command": "mic",
+      "description": "麦克风收音检测",
+      "test_case": "mic=0%",
+      "enabled": true
+    },
+    {
+      "command": "mic",
+      "description": "音频回环测试（喇叭+参考电路+4Mic）",
+      "test_case": "mic=1%",
+      "enabled": true
+    },
+    {
+      "command": "bt",
+      "description": "获取蓝牙状态信息",
+      "test_case": "bt=0%",
+      "enabled": true
+    },
+    {
+      "command": "uwb",
+      "description": "移除UWB配对信息",
+      "test_case": "uwb=2%",
+      "enabled": false
+    },
+    {
+      "command": "efuse",
+      "description": "查询 EFUSE 序列号 (只读)",
+      "test_cases": [
+        {
+          "description": "查询 S100 EFUSE PN",
+          "test_case": "efuse=0,s100%",
+          "enabled": true
+        },
+        {
+          "description": "查询 X5 EFUSE PN",
+          "test_case": "efuse=0,x5%",
+          "enabled": true
+        },
+        {
+          "description": "查询整机 EFUSE PN",
+          "test_case": "efuse=0,sn%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "sensorcal",
+      "description": "舵机控制测试",
+      "test_cases": [
+        {
+          "description": "解锁舵机",
+          "test_case": "sensorcal=0%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "systemctl",
+      "description": "在板端执行 systemctl 控制（谨慎）",
+      "test_cases": [
+        {
+          "description": "停止 lowlevel_service",
+          "test_case": "systemctl=stop,lowlevel_service%",
+          "enabled": true
+        },
+        {
+          "description": "启动 lowlevel_service",
+          "test_case": "systemctl=start,lowlevel_service%",
+          "enabled": true
+        }
+      ]
+    }
+  ],
+  "excluded_test_cases": [
+    {
+      "command": "poweroff",
+      "reason": "关机命令不应在自动化测试中执行"
+    },
+    {
+      "command": "zeropointcal",
+      "reason": "零点标定需要特殊环境，不适合自动化测试"
+    },
+    {
+      "command": "servo",
+      "operation": "2",
+      "reason": "限位标定需要特殊环境，不适合自动化测试"
+    },
+    {
+      "command": "cantest",
+      "reason": "CAN总线测试需要特殊环境，默认禁用"
+    },
+    {
+      "command": "pn",
+      "operation": "1",
+      "reason": "写入序列号会修改设备信息，不适合自动化测试"
+    },
+    {
+      "command": "testinfo",
+      "operation": "1",
+      "reason": "写入标志位会修改设备信息，不适合自动化测试"
+    },
+    {
+      "command": "rtc",
+      "operation": "1",
+      "reason": "写入RTC时间会修改系统时间，不适合自动化测试"
+    },
+    {
+      "command": "bt",
+      "operation": "1",
+      "reason": "配对蓝牙标签需要实际标签，不适合自动化测试"
+    },
+    {
+      "command": "bt",
+      "operation": "2",
+      "reason": "清理配对信息会删除配对数据，不适合自动化测试"
+    },
+    {
+      "command": "imucal",
+      "operation": "1",
+      "reason": "开启IMU产测需要特殊环境，不适合自动化测试"
+    },
+    {
+      "command": "imucal",
+      "operation": "2",
+      "reason": "开启标定模式需要特殊环境，不适合自动化测试"
+    }
+  ],
+  "test_settings": {
+    "default_timeout": 30,
+    "retry_count": 1,
+    "continue_on_failure": true,
+    "case_interval_seconds": 0.2,
+    "parallel_execution": false,
+    "cleanup_on_exit": [
+      {
+        "command": "enfac",
+        "description": "退出工程模式",
+        "test_case": "enfac=1,0%",
+        "enabled": true
+      }
+    ]
+  }
+}

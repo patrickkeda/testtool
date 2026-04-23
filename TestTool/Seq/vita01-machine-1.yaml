@@ -1,0 +1,582 @@
+version: '1.0'
+metadata:
+  name: vita01-machine-1
+  description: 'VITA 机器人整机测试流程'
+  author: 'TestTool'
+  created_at: '2025-01-15T00:00:00.000000'
+  product: Vita01
+  station: MACHINE
+  version: '1.0'
+
+variables:
+  robot_ip: "192.168.126.2"
+  robot_port: 3579
+
+steps:
+  # Step 1: 扫描sn - 判断sn是否为19位，并且前5位是否为80100
+  - id: step_1
+    name: ScanSN
+    type: scan.sn
+    params:
+      dialog_title: '扫描/输入产品SN'
+      hint: '请扫描/输入SN（共19位，且前5位为80100）后回车'
+      regex: '^80100[A-Z0-9]{14}$'
+      timeout_ms: 60000
+    timeout: 5000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 2: 进入工程模式
+  - id: step_2
+    name: EnterEngineerMode
+    type: engineer.test
+    params:
+      command: 'enfac=1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 3: 写入 SN
+  - id: step_3
+    name: WriteSN
+    type: engineer.test
+    params:
+      command: 'pn=1,sn,${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # # Step 4: 舵机标定
+  # - id: step_4
+  #   name: ServoCalibration
+  #   type: engineer.test
+  #   params:
+  #     command: 'servo=2%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 90
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # # Step 4: 读取机器狗版本
+  # - id: step_4
+  #   name: ReadVersion
+  #   type: engineer.test
+  #   params:
+  #     command: 'version=0%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # Step 4: 读取 SOC (读取 x5 和 s100 的 soc_id)
+  # 注意：socid=0% 命令可能返回 x5 和 s100 的 soc_id，需要根据实际响应格式解析
+  - id: step_4
+    name: ReadSOC
+    type: engineer.test
+    params:
+      command: 'socid=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 5: 创建 device.json 文件
+  # 从前面步骤的结果中提取数据并创建 JSON 文件
+  # 文件路径: TestTool\Result\upload\${sn}\device.json
+  - id: step_5
+    name: CreateDeviceJson
+    type: case.create_device_json
+    params:
+      step_6_id: 'step_6'
+      output_dir: 'Result/upload'
+    timeout: 30000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 6: 将 JSON 推送到狗上
+  # 注意：transfer=2,<addrA>,<addrB>% 表示从 addrA 推送到 addrB
+  - id: step_6
+    name: UploadJsonToRobot
+    type: engineer.test
+    params:
+      command: 'transfer=2,Result/upload/${sn}/device.json,/app_param%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 70000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+ 
+  # Step 7: 将 JSON 推送到云端
+  # 注意：执行 JSON 文件的云端上传操作，完成测试数据的云端备份
+  - id: step_7
+    name: UploadJsonToCloud
+    type: engineer.test
+    params:
+      command: 'upload=1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 8: 蓝牙检测
+  - id: step_8
+    name: BluetoothTest
+    type: engineer.test
+    params:
+      command: 'bt=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 300
+    timeout: 350000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 9: 4G 信号检测
+  - id: step_9
+    name: Signal4GTest
+    type: engineer.test
+    params:
+      command: 'sig4g=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 65000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 10: WiFi 检测
+  - id: step_10
+    name: WiFiTest
+    type: engineer.test
+    params:
+      command: 'wifi=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 300
+    timeout: 350000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 11: GNSS 检测
+  - id: step_11
+    name: GNSSTest
+    type: engineer.test
+    params:
+      command: 'gnss=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 11: 电池检测
+  - id: step_11.1
+    name: GNSSTest
+    type: engineer.test
+    params:
+      command: 'battery=1,45,50%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 12: 弹窗 - 请将网线拔掉，并等待机器狗行走
+  - id: step_12
+    name: UnplugNetworkConfirm
+    type: utility.confirm
+    params:
+      title: '操作提示'
+      message: '请将充电底座放到狗身下'
+      confirm_text: '确认'
+      allow_cancel: false
+    timeout: null
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 13: 站起来
+  - id: step_13
+    name: StandUp
+    type: engineer.test
+    params:
+      command: 'action_mode=1,rl_stand%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # # 步骤16: 休息 3 秒
+  # - id: step_16
+  #   name: WaitAfterPowerOn
+  #   type: utility.delay
+  #   params:
+  #     duration_ms: 3000
+  #   timeout: 3200
+  #   retries: 0
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # # Step 17: 向前走
+  # - id: step_17
+  #   name: MoveForward
+  #   type: engineer.test
+  #   params:
+  #     command: 'action_mode=1,mtf%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # # Step 18: 将狗放在充电桩上 - 操作提示
+  # # 注意：系统弹出提示信息对话框，显示 "请移动如二维码"
+  # - id: step_18
+  #   name: PlaceOnCharger
+  #   type: utility.confirm
+  #   params:
+  #     title: '充电桩操作提示'
+  #     message: '请移动如二维码'
+  #     confirm_text: '确认'
+  #     allow_cancel: false
+  #   timeout: null
+  #   retries: 0
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # Step 14: 拍摄一张 ircamera 的图片
+  - id: step_14
+    name: IRCameraCapture
+    type: engineer.test
+    params:
+      command: 'ircamera=1,Result/ircamera/${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # # Step 20: 唤醒大头
+  # - id: step_20
+  #   name: WakeUpHead
+  #   type: engineer.test
+  #   params:
+  #     command: 'tts=0%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # # Step 21: 坐下
+  # - id: step_21
+  #   name: LayDown
+  #   type: engineer.test
+  #   params:
+  #     command: 'action_mode=1,laydown%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # Step 15: 上传标定数据到电脑
+  - id: step_15
+    name: UploadCalibData
+    type: engineer.test
+    params:
+      command: 'transfer=1,/app_param/calib_report/,TestTool/Result/cal/${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 70000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # 步骤16: 休息 3 秒
+  - id: step_16
+    name: WaitAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 5000
+    timeout: 5200
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 17: Efuse 写入 SN
+  - id: step_17
+    name: EfuseSN
+    type: engineer.test
+    params:
+      command: 'efuse=1,sn,${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 18:offline
+  - id: step_18
+    name: offline
+    type: engineer.test
+    params:
+      command: 'fac_offline=1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 19: Efuse 写入 SN
+  - id: step_19
+    name: EfuseSN
+    type: engineer.test
+    params:
+      command: 'efuse=0,sn%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # # 步骤5: 休息 3 秒
+  # - id: step_14.1
+  #   name: WaitAfterPowerOn
+  #   type: utility.delay
+  #   params:
+  #     duration_ms: 3000
+  #   timeout: 3200
+  #   retries: 0
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # Step 20: 站立
+  - id: step_20
+    name: StandUp
+    type: engineer.test
+    params:
+      command: 'action_mode=1,laydown%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 21: 延时 100 秒
+  - id: step_21
+    name: DelayAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 1300
+    timeout: 1350
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 13: stage2设置为1 (stage=1,6,1%)
+  - id: step_13
+    name: ConfirmFusionFlag
+    type: engineer.test
+    params:
+      command: 'stage=1,6,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+      skip_log_response: true  # 跳过响应日志记录
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 22: 下电
+  - id: step_22
+    name: PowerOff
+    type: engineer.test
+    params:
+      command: 'poweroff=1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+
+timeout: null
+retries: 0
+on_failure: stop

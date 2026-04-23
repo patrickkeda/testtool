@@ -1,0 +1,47 @@
+# VITA Engineer Client Build Artifacts
+
+# Standalone package build outputs
+standalone_package/
+*.tar.gz
+
+# Python package build outputs
+build/
+dist/
+*.egg-info/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+.env
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary files
+*.tmp
+*.bak
+test_import.py
+temp_requirements.txt
+
+# Test data files
+*.jpg
+*.data

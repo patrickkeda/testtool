@@ -1,0 +1,957 @@
+version: '1.0'
+metadata:
+  name: vita01-head
+  description: 'VITA 机器人狗头测试序列'
+  author: 'TestTool'
+  created_at: '2025-12-20T00:00:00.000000'
+  product: Vita01
+  station: HEAD
+  version: '1.0'
+
+variables:
+  robot_ip: "192.168.126.2"
+  robot_port: 3579
+  
+  # PLC Modbus RTU 串口参数（满足 9600 8O1）
+  plc_serial_port: 'COM3'        # 根据实际治具 PLC 所在串口修改
+  plc_baudrate: 9600
+  plc_parity: 'O'
+  plc_stopbits: 1
+  plc_bytesize: 8
+  plc_timeout: 5
+  plc_unit_id: 1
+
+steps:
+  # 步骤0: MES初始化（MesInit）
+  - id: step_mes_0
+    name: MESInit
+    type: mes.heartbeat
+    params: {}
+    timeout: 8000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤1: 扫描序列号
+  - id: step_1
+    name: ScanSN
+    type: scan.sn
+    params: {}
+    timeout: 5000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤1.5: MesStart（按SN判站/获取工单）
+  - id: step_mes_1
+    name: MesStartCheckStation
+    type: mes.get_work_order
+    params:
+      sn: '${sn}'
+      expected_station: '${mes.effective_station}'
+    timeout: 15000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤2: 连接 PLC (Modbus RTU 串口，9600 8O1)
+  - id: step_2
+    name: PlcConnect
+    type: plc.modbus.connect
+    params:
+      port: '${plc_serial_port}'
+      baudrate: ${plc_baudrate}
+      # 这里直接固定为 8O1，避免被配置中的默认 N81 覆盖
+      parity: 'O'
+      stopbits: 1
+      bytesize: 8
+      timeout: ${plc_timeout}
+      unit_id: ${plc_unit_id}
+    timeout: 10000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤3: 气缸固定狗头 (在 R0 位置写 1，对应地址 2049)
+  - id: step_3
+    name: FixHeadWithCylinder
+    type: plc.modbus.write_register
+    params:
+      address: 2049
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '气缸固定狗头：写寄存器 002049 (R0) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤3: 狗头上电 (在 R4 位置写 1，对应地址 2053)
+  - id: step_4
+    name: HeadPowerOn
+    type: plc.modbus.write_register
+    params:
+      address: 2053
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '狗头上电：写寄存器 002053 (R4) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤4: 狗头上电 (在 R4 位置写 1，对应地址 2053)
+  - id: step_5
+    name: HeadPowerOn
+    type: plc.modbus.write_register
+    params:
+      address: 2052
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: 'S100上电：写寄存器 002052 (R3) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤5: 休息 100 秒
+  - id: step_6
+    name: WaitAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 60000
+    timeout: 65000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤6: 进入工厂模式 (enfac=1,1%)
+  - id: step_7
+    name: EnterEngineerMode
+    type: engineer.test
+    params:
+      command: 'enfac=1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤7: x5 标志位检测 (testinfo=0,x5%)，判断返回结果是否为 1
+  - id: step_8
+    name: CheckX5Flag
+    type: engineer.test
+    params:
+      command: 'testinfo=0,x5%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 20
+    timeout: 25000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤8: 狗头标志位设置 (testinfo=1,x5mod,0%)，写入 0
+  # - id: step_8
+  #   name: SetHeadFlagZero
+  #   type: engineer.test
+  #   params:
+  #     command: 'testinfo=1,x5mod,0%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # 步骤9: 雷达检测 (lidar=1,Result\${sn}%)
+  # 注意：需要在 TestTool\Result\ 文件夹中建立 ${sn} 的文件（文件夹）
+  - id: step_9
+    name: LidarDetection
+    type: engineer.test
+    params:
+      command: 'lidar=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 70000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤10: 打开背景板灯 (在 R5 位置写 1，对应地址 2054)
+  - id: step_10
+    name: TurnOnBacklight
+    type: plc.modbus.write_register
+    params:
+      address: 2054
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '打开背景板灯：写寄存器 002054 (R5) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤11: 上升毛玻璃气缸 (在 R6 位置写 1，对应地址 2055)
+  - id: step_11
+    name: RaiseFrostedGlassCylinder
+    type: plc.modbus.write_register
+    params:
+      address: 2055
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '上升毛玻璃气缸：写寄存器 002055 (R6) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤12: 双目检测 (camera=1, Result\${sn}%)
+  - id: step_12
+    name: CameraDetection
+    type: engineer.test
+    params:
+      command: 'camera=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 70000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤13: 收起玻璃气缸 (在 R6 位置写 0，对应地址 2055)
+  - id: step_13
+    name: LowerFrostedGlassCylinder
+    type: plc.modbus.write_register
+    params:
+      address: 2055
+      value: 0
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '收起玻璃气缸：写寄存器 002055 (R6) = 0'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤14: 关闭背景板灯 (在 R5 位置写 0，对应地址 2054)
+  - id: step_14
+    name: TurnOffBacklight
+    type: plc.modbus.write_register
+    params:
+      address: 2054
+      value: 0
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '关闭背景板灯：写寄存器 002054 (R5) = 0'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤15: LCD 检测绿色 (lcd=1,green%)
+  - id: step_15
+    name: LCDGreenDetection
+    type: engineer.test
+    params:
+      command: 'lcd=1,green%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # # 步骤16: 舵机下电
+  # - id: step_16
+  #   name: ServoRotate
+  #   type: engineer.test
+  #   params:
+  #     command: 'sensorcal=0%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 80
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config:
+
+  # 步骤17: 标定舵机0位 
+  - id: step_16
+    name: ServoRotate
+    type: engineer.test
+    params:
+      command: 'sensorcal=1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 80
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤18: 获取舵机id
+  - id: step_17
+    name: ServoRotate
+    type: engineer.test
+    params:
+      command: 'servo=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 80
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+ 
+  # 步骤19: 舵机转动
+  - id: step_18
+    name: ServoRotate
+    type: engineer.test
+    params:
+      command: 'servo=1,1,45%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 80
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤20: 休息 2 秒
+  - id: step_19
+    name: WaitAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 10000
+    timeout: 11000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤21: 舵机转动
+  - id: step_20
+    name: ServoRotate
+    type: engineer.test
+    params:
+      command: 'servo=1,1,-20%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 80
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤22: 休息 2 秒
+  - id: step_21
+    name: WaitAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 10000
+    timeout: 11000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+ 
+  # 步骤23: 狗头归正 (servo=1,1,0%)
+  - id: step_22
+    name: HeadReturnToCenter
+    type: engineer.test
+    params:
+      command: 'servo=1,1,0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 80
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤24: 休息 2 秒
+  - id: step_23
+    name: WaitAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 10000
+    timeout: 11000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤25: 舵机转动 
+  - id: step_24
+    name: ServoRotate
+    type: engineer.test
+    params:
+      command: 'servo=1,2,30%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 80
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+ 
+  # 步骤26: 休息 2 秒
+  - id: step_25
+    name: WaitAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 10000
+    timeout: 11000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤27: 舵机转动
+  - id: step_26
+    name: ServoRotate
+    type: engineer.test
+    params:
+      command: 'servo=1,2,-30%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 80
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤28: 休息 2 秒
+  - id: step_27
+    name: WaitAfterServoRotate
+    type: utility.delay
+    params:
+      duration_ms: 10000
+    timeout: 11000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # # 步骤18: 头部下传感器 (读取 R11 位置是否为 1，对应地址 2060)
+  # - id: step_18
+  #   name: CheckHeadDownSensor
+  #   type: plc.modbus.read_register
+  #   params:
+  #     address: 2060
+  #     count: 1
+  #     unit_id: ${plc_unit_id}
+  #     description: '检查头部下传感器 R11 (002060) 是否为 1'
+  #     use_coil: true
+  #     expected_value: 1
+  #   timeout: 5000
+  #   retries: 2
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # # 步骤19: 头部上传感器 (读取 R10 位置是否为 1，对应地址 2059)
+  # - id: step_19
+  #   name: CheckHeadUpSensor
+  #   type: plc.modbus.read_register
+  #   params:
+  #     address: 2059
+  #     count: 1
+  #     unit_id: ${plc_unit_id}
+  #     description: '检查头部上传感器 R10 (002059) 是否为 1'
+  #     use_coil: true
+  #     expected_value: 1
+  #   timeout: 5000
+  #   retries: 2
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # # 步骤20: 头部左传感器 (读取 R12 位置是否为 1，对应地址 2061)
+  # - id: step_20
+  #   name: CheckHeadLeftSensor
+  #   type: plc.modbus.read_register
+  #   params:
+  #     address: 2061
+  #     count: 1
+  #     unit_id: ${plc_unit_id}
+  #     description: '检查头部左传感器 R12 (002061) 是否为 1'
+  #     use_coil: true
+  #     expected_value: 1
+  #   timeout: 5000
+  #   retries: 2
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # # 步骤21: 头部右传感器 (读取 R13 位置是否为 1，对应地址 2062)
+  # - id: step_21
+  #   name: CheckHeadRightSensor
+  #   type: plc.modbus.read_register
+  #   params:
+  #     address: 2062
+  #     count: 1
+  #     unit_id: ${plc_unit_id}
+  #     description: '检查头部右传感器 R13 (002062) 是否为 1'
+  #     use_coil: true
+  #     expected_value: 1
+  #   timeout: 5000
+  #   retries: 2
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+ 
+  # 步骤29: 舵机转动 
+  - id: step_28
+    name: ServoRotate
+    type: engineer.test
+    params:
+      command: 'servo=1,2,0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 80
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤28: 休息 2 秒
+  - id: step_29
+    name: WaitAfterServoRotate
+    type: utility.delay
+    params:
+      duration_ms: 10000
+    timeout: 11000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤30: UWB 检测 (uwb=0%)
+  - id: step_30
+    name: UWBDetection
+    type: engineer.test
+    params:
+      command: 'uwb=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤31: 查看 PLC 寄存器 (002065) 是否为 1
+  - id: step_31
+    name: CheckPlc_2065
+    type: plc.modbus.read_register
+    params:
+      address: 2065
+      count: 1
+      unit_id: ${plc_unit_id}
+      description: '检查 PLC (002065) 是否为 1'
+      use_coil: true
+      expected_value: 1
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤32: 查看 PLC 寄存器 (002066) 是否为 1
+  - id: step_32
+    name: CheckPlc_2066
+    type: plc.modbus.read_register
+    params:
+      address: 2066
+      count: 1
+      unit_id: ${plc_unit_id}
+      description: '检查 PLC (002066) 是否为 1'
+      use_coil: true
+      expected_value: 1
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤33: 查看 PLC 寄存器 (002067) 是否为 1
+  - id: step_33
+    name: CheckPlc_2067
+    type: plc.modbus.read_register
+    params:
+      address: 2067
+      count: 1
+      unit_id: ${plc_unit_id}
+      description: '检查 PLC (002067) 是否为 1'
+      use_coil: true
+      expected_value: 1
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤34: 查看 PLC 寄存器 (002068) 是否为 1
+  - id: step_34
+    name: CheckPlc_2068
+    type: plc.modbus.read_register
+    params:
+      address: 2068
+      count: 1
+      unit_id: ${plc_unit_id}
+      description: '检查 PLC (002068) 是否为 1'
+      use_coil: true
+      expected_value: 1
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤31: 蓝牙检测 (bt=0%)
+  - id: step_35
+    name: BluetoothDetection
+    type: engineer.test
+    params:
+      command: 'bt=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 80
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤32: 4G 信号检测 (sig4g=0%)
+  - id: step_36
+    name: Signal4GDetection
+    type: engineer.test
+    params:
+      command: 'sig4g=0,-60%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤33: WiFi 检测 (wifi=0%)，检测 VitaDynamics 网络
+  - id: step_37
+    name: WiFiDetection
+    type: engineer.test
+    params:
+      command: 'wifi=0,-50%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 65000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤34: GNSS 检测 (gnss=0%)
+  - id: step_38
+    name: GNSSDetection
+    type: engineer.test
+    params:
+      command: 'gnss=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # # 步骤29: 音频回环检测 (audio=0%)
+  - id: step_39
+    name: Audiomictest
+    type: engineer.test
+    params:
+      command: 'mic=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # # 步骤30: 狗头标志位设置 (testinfo=1,x5mod,1%)，设置 x5 标志位
+  # - id: step_30
+  #   name: SetHeadFlagOne
+  #   type: engineer.test
+  #   params:
+  #     command: 'testinfo=1,x5mod,1%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # 步骤26: 气缸解除 (在 R1 位置写 1，对应地址 2050)
+  - id: step_40
+    name: ReleaseCylinder
+    type: plc.modbus.write_register
+    params:
+      address: 2050
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '气缸解除：写寄存器 002050 (R1) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤27: 断开 PLC 连接（失败不影响整体结果）
+  - id: step_41
+    name: PlcDisconnect
+    type: plc.modbus.disconnect
+    params: {}
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤28: 测试完成
+  # 注意：此步骤可以是一个空步骤或者断开连接步骤，根据实际需求添加
+  - id: step_42
+    name: TestComplete
+    type: utility.delay
+    params:
+      duration_ms: 100
+    timeout: 2000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤43: MesEnd上传测试结果（可选择PASS/FAIL）
+  - id: step_mes_2
+    name: MesEnd2UploadResult
+    type: mes.upload_result
+    params:
+      prompt_overall_result: false
+      overall_result: '${context.result}'
+      error_message: '${context.error_message}'
+      use_mes_end: false
+    timeout: 15000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+# 序列级别默认配置
+timeout: null
+retries: 0
+on_failure: stop
+

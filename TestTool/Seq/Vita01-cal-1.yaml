@@ -1,0 +1,223 @@
+version: '1.0'
+metadata:
+  name: Vita01-cal-1
+  description: 'VITA 机器人标定流程（狗融合 & IMU 校准）'
+  author: 'TestTool'
+  created_at: '2025-10-30T17:10:00.000000'
+  product: Vita01
+  station: CAL
+  version: '1.0'
+
+variables:
+  robot_ip: "192.168.126.2"
+  robot_port: 3579
+
+steps:
+  # Step 1: 扫描序列号
+  - id: step_1
+    name: ScanSN
+    type: scan.sn
+    params: {}
+    timeout: 5000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 2: 进入工程模式
+  - id: step_2
+    name: EnterEngineerMode
+    type: engineer.test
+    params:
+      command: 'enfac=1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 3: 狗头标志位检测 (testinfo=0,x5mod%)
+  - id: step_3
+    name: CheckDogHeadFlag
+    type: engineer.test
+    params:
+      command: 'testinfo=0,x5%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 20
+    timeout: 25000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 4: S100 标志位检测 (testinfo=0,s100%)
+  - id: step_4
+    name: CheckS100Flag
+    type: engineer.test
+    params:
+      command: 'testinfo=0,s100%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 20
+    timeout: 25000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 5: 狗融合标定位设置为0 (testinfo=1,calib,0%)
+  # - id: step_5
+  #   name: SetDogFusionCalZero
+  #   type: engineer.test
+  #   params:
+  #     command: 'testinfo=1,calib,0%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+
+  # Step 5: 狗头解除舵机锁定 (sensorcal=0%)
+  - id: step_5
+    name: UnlockHeadServo
+    type: engineer.test
+    params:
+      command: 'sensorcal=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 6: 操作提示 - 弹出确认对话框
+  - id: step_6
+    name: FixtureInstruction
+    type: utility.confirm
+    params:
+      title: '治具操作提示'
+      message: '请将狗放入标定治具上，并确认治具已锁紧'
+      confirm_text: '确认'
+      allow_cancel: false
+    timeout: null
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 7: 狗头舵机0点标定 (sensorcal=1%)
+  - id: step_7
+    name: HeadServoZero
+    type: engineer.test
+    params:
+      command: 'sensorcal=1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 65000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+ 
+  # Step 9: 获取舵机ID
+  - id: step_9
+    name: GetServoID
+    type: engineer.test
+    params:
+      command: 'servo=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 10: 传感器融合标定 (sensorcal=2%)
+  - id: step_10
+    name: SensorFusionCal
+    type: engineer.test
+    params:
+      command: 'sensorcal=2%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 90
+    timeout: 100000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 11: 狗融合标定位设置为1 (testinfo=1,calib,1%)
+  # 注意：此步骤会自动跳过响应日志记录，避免大量日志输出
+  - id: step_11
+    name: ConfirmFusionFlag
+    type: engineer.test
+    params:
+      command: 'testinfo=1,calib,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+      skip_log_response: true  # 跳过响应日志记录
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 12: 上传标定数据到电脑
+  - id: step_12
+    name: UploadCalibData
+    type: engineer.test
+    params:
+      command: 'transfer=1,/app_param/calib_report/,TestTool/Result/cal/${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 70000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+  
+  # Step 13: stage2设置为1 (stage=1,2,1%)
+  - id: step_13
+    name: ConfirmFusionFlag
+    type: engineer.test
+    params:
+      command: 'stage=1,2,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+      skip_log_response: true  # 跳过响应日志记录
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+timeout: null
+retries: 0
+on_failure: stop
+
+
