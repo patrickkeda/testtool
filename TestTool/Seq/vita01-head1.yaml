@@ -1,0 +1,171 @@
+version: '1.0'
+metadata:
+  name: vita01-head
+  description: 'VITA 机器人狗头测试序列'
+  author: 'TestTool'
+  created_at: '2025-12-20T00:00:00.000000'
+  product: Vita01
+  station: HEAD
+  version: '1.0'
+
+variables:
+  robot_ip: "192.168.126.2"
+  robot_port: 3579
+  
+  # PLC Modbus RTU 串口参数（满足 9600 8O1）
+  plc_serial_port: 'COM3'        # 根据实际治具 PLC 所在串口修改
+  plc_baudrate: 9600
+  plc_parity: 'O'
+  plc_stopbits: 1
+  plc_bytesize: 8
+  plc_timeout: 5
+  plc_unit_id: 1
+
+steps:
+  # 步骤1: 扫描序列号
+  - id: step_1
+    name: ScanSN
+    type: scan.sn
+    params: {}
+    timeout: 5000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤2: 连接 PLC (Modbus RTU 串口，9600 8O1)
+  - id: step_2
+    name: PlcConnect
+    type: plc.modbus.connect
+    params:
+      port: '${plc_serial_port}'
+      baudrate: ${plc_baudrate}
+      # 这里直接固定为 8O1，避免被配置中的默认 N81 覆盖
+      parity: 'O'
+      stopbits: 1
+      bytesize: 8
+      timeout: ${plc_timeout}
+      unit_id: ${plc_unit_id}
+    timeout: 10000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤3: 气缸固定狗头 (在 R0 位置写 1，对应地址 2049)
+  - id: step_3
+    name: FixHeadWithCylinder
+    type: plc.modbus.write_register
+    params:
+      address: 2049
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '气缸固定狗头：写寄存器 002049 (R0) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤3: 狗头上电 (在 R4 位置写 1，对应地址 2053)
+  - id: step_4
+    name: HeadPowerOn
+    type: plc.modbus.write_register
+    params:
+      address: 2053
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '狗头上电：写寄存器 002053 (R4) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤4: 狗头上电 (在 R4 位置写 1，对应地址 2053)
+  - id: step_5
+    name: HeadPowerOn
+    type: plc.modbus.write_register
+    params:
+      address: 2052
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: 'S100上电：写寄存器 002052 (R3) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤26: 气缸解除 (在 R1 位置写 1，对应地址 2050)
+  - id: step_40
+    name: ReleaseCylinder
+    type: plc.modbus.write_register
+    params:
+      address: 2050
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '气缸解除：写寄存器 002050 (R1) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤27: 断开 PLC 连接（失败不影响整体结果）
+  - id: step_41
+    name: PlcDisconnect
+    type: plc.modbus.disconnect
+    params: {}
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤28: 测试完成
+  # 注意：此步骤可以是一个空步骤或者断开连接步骤，根据实际需求添加
+  - id: step_42
+    name: TestComplete
+    type: utility.delay
+    params:
+      duration_ms: 100
+    timeout: 2000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+# 序列级别默认配置
+timeout: null
+retries: 0
+on_failure: stop
+

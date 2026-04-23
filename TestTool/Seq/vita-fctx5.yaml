@@ -1,0 +1,461 @@
+version: '1.0'
+metadata:
+  name: vita-x5fct
+  description: 'VITA X5 FCT 测试序列'
+  author: 'TestTool'
+  created_at: '2025-12-20T00:00:00.000000'
+  product: Vita01
+  station: X5_FCT
+  version: '1.0'
+
+variables:
+  robot_ip: "192.168.126.2"
+  robot_port: 3579
+  
+  # PLC Modbus RTU 串口参数（满足 19200 8O1，与 plc-com-gui.py 一致）
+  plc_serial_port: 'COM3'        # 根据实际治具 PLC 所在串口修改
+  plc_baudrate: 19200            # 与 plc-com-gui.py 成功配置一致
+  plc_parity: 'O'
+  plc_stopbits: 1
+  plc_bytesize: 8
+  plc_timeout: 5
+  plc_unit_id: 1
+
+steps:
+  # 步骤1: 扫描序列号
+  - id: step_1
+    name: ScanSN
+    type: scan.sn
+    params: {}
+    timeout: 5000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 2: 治具触摸气缸控制 - 显示交互操作提示
+  - id: step_2
+    name: FixtureTouchControl
+    type: utility.confirm
+    params:
+      title: '治具触摸气缸控制'
+      message: '请将板子放好并压紧治具'
+      confirm_text: '确认完成'
+      allow_cancel: false
+    timeout: null
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤2: 连接 PLC (Modbus RTU 串口，19200 8O1)
+  - id: step_2
+    name: PlcConnect
+    type: plc.modbus.connect
+    params:
+      port: '${plc_serial_port}'
+      baudrate: ${plc_baudrate}
+      # 这里直接固定为 8O1，避免被配置中的默认 N81 覆盖
+      parity: 'O'
+      stopbits: 1
+      bytesize: 8
+      timeout: ${plc_timeout}
+      unit_id: ${plc_unit_id}
+    timeout: 10000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤3: x5 上电 (在 40051 位置写 1，实际使用地址 51)
+  - id: step_3
+    name: X5PowerOn
+    type: plc.modbus.write_register
+    params:
+      address: 51
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: false
+      description: 'x5 上电：写寄存器 40051 (实际地址 51) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤4: 连接 s100 (DT52 对应 40053，实际使用地址 53，代码减1后发送 52)
+  - id: step_4
+    name: ConnectS100
+    type: plc.modbus.write_register
+    params:
+      address: 53
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: false
+      description: '连接 s100：DT52 对应 40053 (实际地址 53，代码减1后发送 52) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤5: 延时 100000 毫秒
+  - id: step_5
+    name: WaitAfterConnect
+    type: utility.delay
+    params:
+      duration_ms: 90000
+    timeout: 95000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤6: 进入工厂模式 (enfac=1,1%)
+  - id: step_6
+    name: EnterEngineerMode
+    type: engineer.test
+    params:
+      command: 'enfac=1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤7: x5 标志位写 0 (testinfo=1,x5,0%)
+  - id: step_7
+    name: SetX5FlagZero
+    type: engineer.test
+    params:
+      command: 'testinfo=1,x5,0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤8: 写入 sn (pn=1,x5,${sn}%)
+  - id: step_8
+    name: WriteX5SN
+    type: engineer.test
+    params:
+      command: 'pn=1,x5,${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤9: UWB 检测 (uwb=0%)
+  - id: step_9
+    name: UWBDetection
+    type: engineer.test
+    params:
+      command: 'uwb=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤10: 开启补光灯 (fill_light=1%)
+  - id: step_10
+    name: TurnOnFillLight
+    type: engineer.test
+    params:
+      command: 'fill_light=1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤11: 开启补光灯继电器 (在 40061 位置写 1，实际使用地址 61)
+  - id: step_11
+    name: TurnOnFillLightRelay
+    type: plc.modbus.write_register
+    params:
+      address: 61
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: false
+      description: '开启补光灯继电器：写寄存器 40061 (实际地址 61) = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤12: 对比电压 (查看 40101 位置的数据，实际使用地址 101)
+  - id: step_12
+    name: CheckVoltage
+    type: plc.modbus.read_register
+    params:
+      address: 101
+      count: 1
+      unit_id: ${plc_unit_id}
+      description: '对比电压：读取寄存器 40101 (实际地址 101)'
+      use_coil: false
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤13: 关闭补光灯继电器 (在 40061 位置写 99，实际使用地址 61)
+  - id: step_13
+    name: TurnOffFillLightRelay
+    type: plc.modbus.write_register
+    params:
+      address: 61
+      value: 99
+      unit_id: ${plc_unit_id}
+      use_coil: false
+      description: '关闭补光灯继电器：写寄存器 40061 (实际地址 61) = 99'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤14: 关闭补光灯 (fill_light=0%)
+  - id: step_14
+    name: TurnOffFillLight
+    type: engineer.test
+    params:
+      command: 'fill_light=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤15: WiFi 测试 (wifi=0%)
+  - id: step_15
+    name: WiFiTest
+    type: engineer.test
+    params:
+      command: 'wifi=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤16: GNSS 测试 (gnss=0%)
+  - id: step_16
+    name: GNSSTest
+    type: engineer.test
+    params:
+      command: 'gnss=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤17: BT 测试 (bt=0%)
+  - id: step_17
+    name: BTTest
+    type: engineer.test
+    params:
+      command: 'bt=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤18: 4G 信号测试 (sig4g=0%)
+  - id: step_18
+    name: Sig4GTest
+    type: engineer.test
+    params:
+      command: 'sig4g=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤19: x5 标志位写 1 (testinfo=1,x5,1%)
+  - id: step_19
+    name: SetX5FlagOne
+    type: engineer.test
+    params:
+      command: 'testinfo=1,x5,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 31: 写入 efuseSN（仅 SN 后 9 位）
+  - id: step_31
+    name: WriteEfuseSN
+    type: engineer.test
+    params:
+      command: 'efuse=1,x5,${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤20: 治具下电 (在 40051 位置写 99，实际使用地址 51)
+  - id: step_20
+    name: X5PowerOff
+    type: plc.modbus.write_register
+    params:
+      address: 51
+      value: 99
+      unit_id: ${plc_unit_id}
+      use_coil: false
+      description: '治具下电：写寄存器 40051 (实际地址 51) = 99'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤21: S100 下电 (DT52 对应 40053，实际使用地址 53，代码减1后发送 52，写 99)
+  - id: step_21
+    name: S100PowerOff
+    type: plc.modbus.write_register
+    params:
+      address: 53
+      value: 99
+      unit_id: ${plc_unit_id}
+      use_coil: false
+      description: 'S100 下电：DT52 对应 40053 (实际地址 53，代码减1后发送 52) = 99'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤22: 断开 PLC 连接（失败不影响整体结果）
+  - id: step_22
+    name: PlcDisconnect
+    type: plc.modbus.disconnect
+    params: {}
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+# 序列级别默认配置
+timeout: null
+retries: 0
+on_failure: stop
+

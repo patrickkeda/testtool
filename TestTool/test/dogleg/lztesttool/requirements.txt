@@ -1,0 +1,20 @@
+# 电机控制工具依赖包
+# 安装方法：pip install -r requirements.txt
+
+# GUI框架（Python标准库，无需安装）
+# tkinter
+
+# 图表绘制
+matplotlib>=3.5.0
+
+# CAN通信（需要单独安装PCANBasic的DLL）
+# PCANBasic - 需要从Peak System官网下载并安装驱动
+
+# 串口通信
+pyserial>=3.5
+
+# Modbus通信
+pymodbus>=3.0.0
+
+# 打包工具（用于生成exe）
+pyinstaller>=5.0.0

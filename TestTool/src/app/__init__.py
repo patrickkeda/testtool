@@ -1,0 +1,3 @@
+"""HMI application package."""
+
+

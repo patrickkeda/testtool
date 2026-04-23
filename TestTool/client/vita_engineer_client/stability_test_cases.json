@@ -1,0 +1,98 @@
+{
+  "test_cases": [
+    {
+      "command": "enfac",
+      "description": "进入工程模式（前置条件）",
+      "test_case": "enfac=1,1%",
+      "enabled": true,
+      "required": true,
+      "order": 0
+    },
+    {
+      "command": "servo",
+      "description": "舵机控制测试",
+      "test_cases": [
+        {
+          "description": "限位标定",
+          "test_case": "servo=2%",
+          "enabled": true
+        }
+      ]
+    }
+  ],
+  "excluded_test_cases": [
+    {
+      "command": "poweroff",
+      "reason": "关机命令不应在自动化测试中执行"
+    },
+    {
+      "command": "zeropointcal",
+      "reason": "零点标定需要特殊环境，不适合自动化测试"
+    },
+    {
+      "command": "cantest",
+      "reason": "CAN总线测试需要特殊环境，默认禁用"
+    },
+    {
+      "command": "pn",
+      "operation": "1",
+      "reason": "写入序列号会修改设备信息，不适合自动化测试"
+    },
+    {
+      "command": "testinfo",
+      "operation": "1",
+      "reason": "写入标志位会修改设备信息，不适合自动化测试"
+    },
+    {
+      "command": "rtc",
+      "operation": "1",
+      "reason": "写入RTC时间会修改系统时间，不适合自动化测试"
+    },
+    {
+      "command": "uwb",
+      "operation": "1",
+      "reason": "设置UWB参数需要特殊参数，不适合自动化测试"
+    },
+    {
+      "command": "bt",
+      "operation": "1",
+      "reason": "配对蓝牙标签需要实际标签，不适合自动化测试"
+    },
+    {
+      "command": "bt",
+      "operation": "2",
+      "reason": "清理配对信息会删除配对数据，不适合自动化测试"
+    },
+    {
+      "command": "imucal",
+      "operation": "1",
+      "reason": "开启IMU产测需要特殊环境，不适合自动化测试"
+    },
+    {
+      "command": "imucal",
+      "operation": "2",
+      "reason": "开启标定模式需要特殊环境，不适合自动化测试"
+    },
+    {
+      "command": "enfac",
+      "operation": "1",
+      "test_case": "enfac=1,0%",
+      "reason": "退出工程模式应在测试结束后执行，不在测试用例中"
+    }
+  ],
+  "test_settings": {
+    "default_timeout": 30,
+    "retry_count": 1,
+    "continue_on_failure": true,
+    "case_interval_seconds": 1,
+    "parallel_execution": false,
+    "cleanup_on_exit": [
+      {
+        "command": "enfac",
+        "description": "退出工程模式",
+        "test_case": "enfac=1,0%",
+        "enabled": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,353 @@
+version: '1.0'
+metadata:
+  name: dogleg-test
+  description: '狗腿模组扭矩测试序列（PLC + PCAN）'
+  author: 'TestTool'
+  created_at: '2026-03-13T00:00:00.000000'
+  product: Vita01
+  station: DOGLEG
+  version: '1.0'
+
+variables:
+  # PLC Modbus RTU 串口参数（满足 115200 8O1）
+  plc_serial_port: 'COM3'        # 根据实际治具 PLC 所在串口修改
+  plc_baudrate: 115200
+  plc_parity: 'O'
+  plc_stopbits: 1
+  plc_bytesize: 8
+  plc_timeout: 5
+  plc_unit_id: 1
+
+  # PCAN 参数（pcan-usb1）
+  pcan_interface: 'pcan'
+  pcan_channel: 'pcan-usb1'
+  pcan_baudrate: 1000000
+
+  # 被测电机/动作参数
+  motor_id: 3
+  torque_log_dir: 'Result/dogleg'
+  extend_torque: 0.3      # 伸腿扭矩上限（调低，动作更柔和）
+  kick_torque: 0.3        # 踢腿扭矩上限
+  move_duration_ms: 8000  # 伸腿/踢腿动作时间，5 秒
+
+steps:
+  # 步骤0: MES初始化（MesInit）
+  - id: step_mes_0
+    name: MESInit
+    type: mes.heartbeat
+    params: {}
+    timeout: 8000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤1: 扫描 SN
+  - id: step_1
+    name: ScanSN
+    type: scan.sn
+    params: {}
+    timeout: 60000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤1.5: MesStart（按SN判站/获取工单）
+  - id: step_mes_1
+    name: MesStartCheckStation
+    type: mes.get_work_order
+    params:
+      sn: '${sn}'
+      expected_station: '${mes.effective_station}'
+    timeout: 15000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤2: 连接 PLC (Modbus RTU 串口，115200 8O1)
+  - id: step_2
+    name: PlcConnect
+    type: plc.modbus.connect
+    params:
+      port: '${plc_serial_port}'
+      baudrate: ${plc_baudrate}
+      # 固定为 8O1，避免被默认配置覆盖
+      parity: 'O'
+      stopbits: 1
+      bytesize: 8
+      timeout: ${plc_timeout}
+      unit_id: ${plc_unit_id}
+    timeout: 10000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤3: 启动治具设备（示例：总电源上电，具体地址按实际 PLC 寄存器调整）
+  - id: step_3
+    name: FixtureStart
+    type: plc.modbus.write_register
+    params:
+      address: 2049        # TODO: 按实际狗腿治具启动地址修改
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '启动狗腿治具设备'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤4: 左电源上电
+  - id: step_4
+    name: LeftPowerOn
+    type: plc.modbus.write_register
+    params:
+      address: 2052        # TODO: 按实际左电源线圈/寄存器地址修改
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '左电源上电'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤5: 右电源上电
+  - id: step_5
+    name: RightPowerOn
+    type: plc.modbus.write_register
+    params:
+      address: 2053        # TODO: 按实际右电源线圈/寄存器地址修改
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '右电源上电'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤6: 通过 PCAN 连接电机总线（pcan-usb1）
+  - id: step_6
+    name: PcanConnect
+    type: pcan.connect
+    params:
+      interface: '${pcan_interface}'
+      channel: '${pcan_channel}'
+      baudrate: ${pcan_baudrate}
+    timeout: 10000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤7: 搜索并连接 3 号电机
+  - id: step_7
+    name: SearchMotor3
+    type: pcan.search_motor
+    params:
+      motor_id: ${motor_id}
+    timeout: 10000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤8: 使能电机
+  - id: step_8
+    name: EnableMotor
+    type: pcan.enable_motor
+    params:
+      motor_id: ${motor_id}
+    timeout: 10000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤9: 伸腿动作，并记录扭矩生成日志
+  - id: step_9
+    name: ExtendLegWithTorqueLog
+    type: pcan.move_with_torque_log
+    params:
+      action: 'extend'
+      motor_id: ${motor_id}
+      sn: '${sn}'
+      log_dir: '${torque_log_dir}'
+      torque_limit: ${extend_torque}
+      duration_ms: ${move_duration_ms}
+    timeout: 60000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤10: 踢腿动作，并记录扭矩生成日志
+  - id: step_10
+    name: KickLegWithTorqueLog
+    type: pcan.move_with_torque_log
+    params:
+      action: 'kick'
+      motor_id: ${motor_id}
+      sn: '${sn}'
+      log_dir: '${torque_log_dir}'
+      torque_limit: ${kick_torque}
+      duration_ms: ${move_duration_ms}
+    timeout: 60000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤11: 查看 PLC 寄存器 (002055) 是否为 1
+  - id: step_11
+    name: CheckPlc_2055
+    type: plc.modbus.read_register
+    params:
+      address: 2055       # 对应表格中的 002055
+      count: 1
+      unit_id: ${plc_unit_id}
+      description: '检查 (002055) 是否为 1'
+      use_coil: true
+      expected_value: 1
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤12: 查看 PLC 寄存器 (002056) 是否为 1
+  - id: step_12
+    name: CheckPlc_2056
+    type: plc.modbus.read_register
+    params:
+      address: 2056       # 对应表格中的 002056
+      count: 1
+      unit_id: ${plc_unit_id}
+      description: '检查 (002056) 是否为 1'
+      use_coil: true
+      expected_value: 1
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤13: 全部下电（左/右电源与治具复位）
+  - id: step_13
+    name: PowerOffAll
+    type: plc.modbus.write_register
+    params:
+      address: 2050        # TODO: 与步骤3~5 对应的关闭逻辑按实际修改
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '狗腿治具全部下电'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤14: 断开 PLC 连接
+  - id: step_14
+    name: PlcDisconnect
+    type: plc.modbus.disconnect
+    params: {}
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤15: 断开 PCAN 连接
+  - id: step_15
+    name: PcanDisconnect
+    type: pcan.disconnect
+    params: {}
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤16: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL）
+  - id: step_mes_2
+    name: MesEnd2UploadResult
+    type: mes.upload_result
+    params:
+      prompt_overall_result: false
+      overall_result: '${context.result}'
+      error_message: '${context.error_message}'
+      use_mes_end: false
+    timeout: 15000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+# 序列级别默认配置
+timeout: null
+retries: 0
+on_failure: stop
+

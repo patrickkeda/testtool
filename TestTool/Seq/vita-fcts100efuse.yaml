@@ -1,0 +1,728 @@
+version: '1.0'
+metadata:
+  name: vita-s100fct
+  description: 'VITA S100 FCT 测试序列'
+  author: 'TestTool'
+  created_at: '2025-12-15T23:00:00.000000'
+  product: Vita01
+  station: S100_FCT
+  version: '1.0'
+
+variables:
+  # 工程模式（S100本体）
+  robot_ip: "192.168.125.2"
+  robot_port: 3579
+
+  # PLC（通过 COM3，参数参考 ModScan 截图）
+  plc_serial_port: "COM3"
+  plc_baudrate: 19200
+  plc_parity: "O"      # ODD
+  plc_stopbits: 1
+  plc_bytesize: 8
+  plc_timeout: 5
+  plc_unit_id: 1
+
+steps:
+  # Step 1: 扫描 SN
+  - id: step_1
+    name: ScanSN
+    type: scan.sn
+    params: {}
+    timeout: 5000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 2: 治具触摸气缸控制 - 显示交互操作提示
+  - id: step_2
+    name: FixtureTouchControl
+    type: utility.confirm
+    params:
+      title: '治具触摸气缸控制'
+      message: '请将板子放好并压紧治具'
+      confirm_text: '确认完成'
+      allow_cancel: false
+    timeout: null
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 3: 连接 PLC (Modbus RTU, COM3)
+  - id: step_3
+    name: ConnectPLC
+    type: plc.modbus.connect
+    params:
+      port: '${plc_serial_port}'
+      baudrate: ${plc_baudrate}
+      parity: '${plc_parity}'
+      stopbits: ${plc_stopbits}
+      bytesize: ${plc_bytesize}
+      timeout: ${plc_timeout}
+    timeout: 10000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 4: S100 上电 - 向寄存器 40084 写 1
+  - id: step_4
+    name: S100PowerOn
+    type: plc.modbus.write_register
+    params:
+      address: 84         # 对应 40084
+      value: 1
+      unit_id: ${plc_unit_id}
+      description: 's100 上电 (40084=1)'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 5: 延时 100 秒
+  - id: step_5
+    name: DelayAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 90000
+    timeout: 95000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 6: 进入工程模式 (enfac=1,1%)
+  - id: step_6
+    name: EnterEngineerMode
+    type: engineer.test
+    params:
+      command: 'enfac=1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 7: S100 标志位写 0 (testinfo=1,s100,0%)
+  - id: step_7
+    name: S100FlagClear
+    type: engineer.test
+    params:
+      command: 'testinfo=1,s100,0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 8: 写入 S100 SN (pn=1,s100,${sn}%)
+  - id: step_8
+    name: WriteS100SN
+    type: engineer.test
+    params:
+      command: 'pn=1,s100,${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 9: 获取当前版本 (version=0%)
+  - id: step_9
+    name: GetVersion
+    type: engineer.test
+    params:
+      command: 'version=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 10: 风扇 1 测试 (fan=1,1,100%)
+  - id: step_10
+    name: Fan1Test
+    type: engineer.test
+    params:
+      command: 'fan=1,0,100%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 11: 风扇 2 测试 (fan=1,2,100%)
+  - id: step_11
+    name: Fan2Test
+    type: engineer.test
+    params:
+      command: 'fan=1,1,100%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 11: 触发 - 向寄存器 40073 写 1
+  - id: step_11
+    name: Trigger40073On
+    type: plc.modbus.write_register
+    params:
+      address: 73         # 对应 40073
+      value: 1
+      unit_id: ${plc_unit_id}
+      description: '触发 (40073=1)'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 12: CAN 测试 (cantest=0%)
+  - id: step_12
+    name: CANTest
+    type: engineer.test
+    params:
+      command: 'cantest=0,4-7%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 12: CAN 测试 (cantest=0%)
+  - id: step_12
+    name: CANTest
+    type: engineer.test
+    params:
+      command: 'cantest=0,5-6%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 13: 触发关闭 - 向寄存器 40073 写 99
+  - id: step_13
+    name: Trigger40073Off
+    type: plc.modbus.write_register
+    params:
+      address: 73         # 对应 40073
+      value: 99
+      unit_id: ${plc_unit_id}
+      description: '触发关闭 (40073=99)'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 14: CANFR 电压触发 - 向寄存器 40063 写 1
+  - id: step_14
+    name: CANFRVoltageTrigger
+    type: plc.modbus.write_register
+    params:
+      address: 63         # 对应 40063
+      value: 1
+      unit_id: ${plc_unit_id}
+      description: 'CANFR 电压触发 (40063=1)'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 5: 延时 100 秒
+  - id: step_5
+    name: DelayAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 2000
+    timeout: 2500
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 15: 读 CANFR 电压 - 读取寄存器 40103 的值，显示在 value 中
+  - id: step_15
+    name: ReadCANFRVoltage
+    type: plc.modbus.read_register
+    params:
+      address: 103        # 对应 40103
+      count: 1
+      unit_id: ${plc_unit_id}
+      expected_low: 3000
+      expected_high: 6000
+      description: '读 CANFR 电压 (读取 40103)'
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect:
+      low: 3000
+      high: 6000
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 16: CANFR 电压关闭 - 向寄存器 40063 写 99
+  - id: step_16
+    name: CANFRVoltageOff
+    type: plc.modbus.write_register
+    params:
+      address: 63         # 对应 40063
+      value: 99
+      unit_id: ${plc_unit_id}
+      description: 'CANFR 电压关闭 (40063=99)'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 17: CANFL 电压触发 - 向寄存器 40063 写 2
+  - id: step_17
+    name: CANFLVoltageTrigger
+    type: plc.modbus.write_register
+    params:
+      address: 63         # 对应 40063
+      value: 2
+      unit_id: ${plc_unit_id}
+      description: 'CANFL 电压触发 (40063=2)'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 5: 延时 100 秒
+  - id: step_5
+    name: DelayAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 2000
+    timeout: 2500
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 18: 读 CANFL 电压 - 读取寄存器 40103 的值，显示在 value 中
+  - id: step_18
+    name: ReadCANFLVoltage
+    type: plc.modbus.read_register
+    params:
+      address: 103        # 对应 40103
+      count: 1
+      unit_id: ${plc_unit_id}
+      expected_low: 3000
+      expected_high: 6000
+      description: '读 CANFL 电压 (读取 40103)'
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect:
+      low: 3000
+      high: 6000
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 19: CANFL 电压关闭 - 向寄存器 40063 写 99
+  - id: step_19
+    name: CANFLVoltageOff
+    type: plc.modbus.write_register
+    params:
+      address: 63         # 对应 40063
+      value: 99
+      unit_id: ${plc_unit_id}
+      description: 'CANFL 电压关闭 (40063=99)'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 20: CANRR 电压触发 - 向寄存器 40063 写 3
+  - id: step_20
+    name: CANRRVoltageTrigger
+    type: plc.modbus.write_register
+    params:
+      address: 63         # 对应 40063
+      value: 3
+      unit_id: ${plc_unit_id}
+      description: 'CANRR 电压触发 (40063=3)'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 5: 延时 100 秒
+  - id: step_5
+    name: DelayAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 2000
+    timeout: 2500
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 21: 读 CANRR 电压 - 读取寄存器 40103 的值，显示在 value 中
+  - id: step_21
+    name: ReadCANRRVoltage
+    type: plc.modbus.read_register
+    params:
+      address: 103        # 对应 40103
+      count: 1
+      unit_id: ${plc_unit_id}
+      expected_low: 3000
+      expected_high: 6000
+      description: '读 CANRR 电压 (读取 40103)'
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect:
+      low: 3000
+      high: 6000
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 22: CANRR 电压关闭 - 向寄存器 40063 写 99
+  - id: step_22
+    name: CANRRVoltageOff
+    type: plc.modbus.write_register
+    params:
+      address: 63         # 对应 40063
+      value: 99
+      unit_id: ${plc_unit_id}
+      description: 'CANRR 电压关闭 (40063=99)'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 23: CANRL 电压触发 - 向寄存器 40063 写 4
+  - id: step_23
+    name: CANRLVoltageTrigger
+    type: plc.modbus.write_register
+    params:
+      address: 63         # 对应 40063
+      value: 4
+      unit_id: ${plc_unit_id}
+      description: 'CANRL 电压触发 (40063=4)'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 5: 延时 100 秒
+  - id: step_5
+    name: DelayAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 2000
+    timeout: 2500
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 24: 读 CANRL 电压 - 读取寄存器 40103 的值，显示在 value 中
+  - id: step_24
+    name: ReadCANRLVoltage
+    type: plc.modbus.read_register
+    params:
+      address: 103        # 对应 40103
+      count: 1
+      unit_id: ${plc_unit_id}
+      expected_low: 3000
+      expected_high: 6000
+      description: '读 CANRL 电压 (读取 40103)'
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect:
+      low: 3000
+      high: 6000
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 25: CANRL 电压关闭 - 向寄存器 40063 写 99
+  - id: step_25
+    name: CANRLVoltageOff
+    type: plc.modbus.write_register
+    params:
+      address: 63         # 对应 40063
+      value: 99
+      unit_id: ${plc_unit_id}
+      description: 'CANRL 电压关闭 (40063=99)'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 26: IMU 校验 (imu=1%)
+  - id: step_26
+    name: IMUCalibration
+    type: engineer.test
+    params:
+      command: 'imucal=1,2%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 65000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 27: 激光雷达测试 (lidar=1,${sn}%)
+  - id: step_27
+    name: LidarTest
+    type: engineer.test
+    params:
+      command: 'lidar=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 90
+    timeout: 95000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # # Step 28: 治具触摸气缸控制 - 显示交互操作提示
+  # - id: step_28
+  #   name: FixtureTouchControl
+  #   type: utility.confirm
+  #   params:
+  #     title: '治具触摸气缸控制'
+  #     message: '请执行「显示抚摸触控板」操作，通过治具气缸驱动实现与设备触控板的触摸动作模拟'
+  #     confirm_text: '确认完成'
+  #     allow_cancel: false
+  #   timeout: null
+  #   retries: 0
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # Step 29: 狗背抚摸测试 (tactile=0%)
+  - id: step_29
+    name: TactileTest
+    type: engineer.test
+    params:
+      command: 'tactile=0,0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # # Step 31: 写入 efuseSN (efuse=1,s100,${sn}%)
+  # - id: step_31
+  #   name: WriteEfuseSN
+  #   type: engineer.test
+  #   params:
+  #     command: 'efuse=1,s100,${sn}%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 2
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # Step 32: S100 标志位写 1 (testinfo=1,s100,1%)
+  - id: step_32
+    name: S100FlagSet
+    type: engineer.test
+    params:
+      command: 'testinfo=1,s100,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 30: S100（狗头）下电 - 向寄存器 40084 写 99
+  - id: step_30
+    name: S100PowerOff
+    type: plc.modbus.write_register
+    params:
+      address: 84         # 对应 40084
+      value: 99
+      unit_id: ${plc_unit_id}
+      description: 'S100（狗头）下电 (40084=99)'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 33: 断开 PLC 连接
+  - id: step_33
+    name: DisconnectPLC
+    type: plc.modbus.disconnect
+    params: {}
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+
+timeout: null
+retries: 0
+on_failure: stop
+
+

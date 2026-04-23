@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vita-engineer-client"
+version = "1.0.0"
+description = "VITA Robot Engineer Service Python Client"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "LicenseRef-Proprietary"}
+authors = [
+    {name = "VITA Robot Team", email = "robot@vita.ai"}
+]
+
+dependencies = [
+    "cryptography>=3.4.8",
+    "websockets>=10.0",
+    "numpy>=1.21.0",
+    "matplotlib>=3.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-asyncio>=0.18.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+]
+
+[project.scripts]
+vita-engineer-test = "vita_engineer_client.test_engineer_client:main"
+vita-engineer-gui = "vita_engineer_client.gui_example:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["vita_engineer_client*"]
+
+[tool.setuptools.package-data]
+vita_engineer_client = ["*.data", "*.jpg"]

@@ -1,0 +1,266 @@
+version: '1.0'
+metadata:
+  name: Vita01-motor-1
+  description: 'VITA机器人电机测试序列 - Modbus控制电机并记录数据'
+  author: 'TestTool'
+  created_at: '2025-12-08T11:00:00.000000'
+  product: Vita01
+  station: MOTOR
+  version: '1.0'
+
+variables:
+  motor_ip: "192.168.0.22"
+  motor_port: 502
+  modbus_timeout: 5
+  record_duration: 20.0
+  record_interval: 10
+
+steps:
+  # 步骤1: 扫描序列号
+  - id: step_1
+    name: ScanSN
+    type: scan.sn
+    params: {}
+    timeout: 5000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤2: SN判断 (根据SN前7位设置id)
+  - id: step_2
+    name: SNJudgment
+    type: utility.sn_judgment
+    params:
+      rules:
+        - prefix: "3040001"
+          id: 1
+        - prefix: "3040003"
+          id: 2
+        - prefix: "3040004"
+          id: 3
+    timeout: 5000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤3: 连接电机 (Modbus TCP连接)
+  - id: step_3
+    name: ConnectMotor
+    type: modbus.connect
+    params:
+      ip: '${motor_ip}'
+      port: ${motor_port}
+      timeout: ${modbus_timeout}
+    timeout: 10000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤4: 写入id到寄存器 (地址41094，写入步骤2判断的id值)
+  - id: step_4
+    name: WriteIdToRegister
+    type: modbus.write_register
+    params:
+      address: 41094
+      value: '${context.id}'
+      description: '写入id到寄存器'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤5: 等待使能稳定 (延时1秒)
+  - id: step_5
+    name: WaitEnableStable
+    type: utility.delay
+    params:
+      duration_ms: 1000
+    timeout: 2000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤6: 开始运行电机 (写入线圈 105 = True)
+  - id: step_6
+    name: MotorRun
+    type: modbus.write_coil
+    params:
+      address: 105
+      value: true
+      description: '运行电机'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤7: 延时1秒
+  - id: step_7
+    name: DelayAfterMotorRun
+    type: utility.delay
+    params:
+      duration_ms: 1000
+    timeout: 2000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤8: 电机运行复位 (写入线圈 105 = False)
+  - id: step_8
+    name: MotorRunReset
+    type: modbus.write_coil
+    params:
+      address: 105
+      value: false
+      description: '电机运行复位'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤9: 记录电机数据 (运行20秒，间隔10ms，导出到CSV，包含动态扭矩传感器)
+  - id: step_9
+    name: RecordMotorData
+    type: modbus.record_data
+    params:
+      duration: ${record_duration}
+      interval_ms: ${record_interval}
+      register_address: 100
+      register_count: 5
+      coil_address: 100
+      coil_count: 4
+      sn: '${sn}'
+      output_path: 'Result/motor/${sn}.csv'
+    timeout: 25000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤10: 生成PDF测试报告 (从CSV生成PDF报告)
+  - id: step_10
+    name: GeneratePDFReport
+    type: modbus.generate_report
+    params:
+      csv_path: 'Result/motor/${sn}.csv'
+      output_path: 'Result/motor/${sn}.pdf'
+      filter_window_size: 9
+      low: 1
+      high: 2
+      ratio_low: 0.9
+      ratio_high: 1.1
+    timeout: 30000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤11: 判断TN曲线 (判断滤波后的实测曲线是否在参考曲线的指定范围内)
+  - id: step_11
+    name: JudgeTNCurve
+    type: utility.judge_tn_curve
+    params:
+      csv_path: 'Result/motor/${sn}.csv'
+      filter_window_size: 9
+      low: 1
+      high: 2
+    timeout: 10000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤12: 判断静态扭矩比例曲线 (基于滤波后的扭矩比例曲线进行整体判定：当传感器扭矩>=5.0Nm时，判断滤波后的曲线是否始终处于[Low, High]区间内，而非对原始采样点逐点判定)
+  - id: step_12
+    name: JudgeTorqueRatio
+    type: utility.judge_torque_ratio
+    params:
+      csv_path: 'Result/motor/${sn}.csv'
+      filter_window_size: 9
+      torque_threshold: 5.0
+      low: 0.9
+      high: 1.1
+    timeout: 10000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤13: 电机复位 (写入线圈 109 = True，持续2秒)
+  - id: step_13
+    name: MotorReset
+    type: modbus.write_coil
+    params:
+      address: 109
+      value: true
+      duration_ms: 2000
+      description: '复位电机（持续2秒）'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤14: 断开电机连接
+  - id: step_14
+    name: DisconnectMotor
+    type: modbus.disconnect
+    params: {}
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+timeout: null
+retries: 0
+on_failure: stop

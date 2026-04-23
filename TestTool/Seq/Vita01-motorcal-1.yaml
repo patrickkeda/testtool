@@ -1,0 +1,476 @@
+version: '1.0'
+metadata:
+  name: Vita01-motorcal-1
+  description: 'VITA 机器人电机标定'
+  author: 'TestTool'
+  created_at: '2025-10-30T17:10:00.000000'
+  product: Vita01
+  station: CAL
+  version: '1.0'
+
+variables:
+  robot_ip: "192.168.126.2"
+  robot_port: 3579
+
+steps:
+
+  # Step MES-0: MES初始化（MesInit）
+  - id: step_mes_0
+    name: MESInit
+    type: mes.heartbeat
+    params: {}
+    timeout: 8000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 1: 扫描序列号
+  - id: step_1
+    name: ScanSN
+    type: scan.sn
+    params: {}
+    timeout: 5000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 2: 进入工程模式
+
+  # Step MES-1: MesStart（按SN判站/获取工单）
+  - id: step_mes_1
+    name: MesStartCheckStation
+    type: mes.get_work_order
+    params:
+      sn: '${sn}'
+      expected_station: '${mes.effective_station}'
+    timeout: 15000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_2
+    name: EnterEngineerMode
+    type: engineer.test
+    params:
+      command: 'enfac=1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 3: 狗头标志位检测 (testinfo=0,x5mod%)
+  - id: step_3
+    name: CheckDogHeadFlag
+    type: engineer.test
+    params:
+      command: 'testinfo=0,x5%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 20
+    timeout: 25000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 4: S100 标志位检测 (testinfo=0,s100%)
+  - id: step_4
+    name: CheckS100Flag
+    type: engineer.test
+    params:
+      command: 'testinfo=0,s100%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 20
+    timeout: 25000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 5: 操作提示 - 弹出确认对话框
+  - id: step_5
+    name: FixtureInstruction
+    type: utility.confirm
+    params:
+      title: '治具操作提示'
+      message: '请将狗放入标定治具上，并确认治具已锁紧'
+      confirm_text: '确认'
+      allow_cancel: false
+    timeout: null
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 6: 电机id写入
+  - id: step_6
+    name: motor_idCal
+    type: engineer.test
+    params:
+      command: 'motor_id=1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 70000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 7: 电机限位标定
+  - id: step_7
+    name: zeropointcalZero
+    type: engineer.test
+    params:
+      command: 'zeropointcal=1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 65000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 8: stage2设置为1 (stage=1,2,1%)
+  - id: step_8
+    name: ConfirmFusionFlag
+    type: engineer.test
+    params:
+      command: 'stage=1,1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+      skip_log_response: true  # 跳过响应日志记录
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  - id: step_9
+    name: LidarDetection
+    type: engineer.test
+    params:
+      command: 'lidar=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 6: 双目检测 - 将点云信息存储到带sn的文件夹下面
+  - id: step_10
+    name: StereoVisionDetection
+    type: engineer.test
+    params:
+      command: 'camera=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 6: 双目检测 - 将点云信息存储到带sn的文件夹下面
+  - id: step_11
+    name: StereoVisionDetection
+    type: engineer.test
+    params:
+      command: 'ircamera=1,Result/ircamera/${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 7: 舵机标定
+  - id: step_12
+    name: ServoCalibration
+    type: engineer.test
+    params:
+      command: 'servo=2%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 90
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # # Step 11: 弹窗 - 请将网线拔掉，并等待机器狗行走
+  # - id: step_11
+  #   name: UnplugNetworkConfirm
+  #   type: utility.confirm
+  #   params:
+  #     title: '操作提示'
+  #     message: '请将网线拔掉，并等待机器狗行走'
+  #     confirm_text: '确认'
+  #     allow_cancel: false
+  #   timeout: null
+  #   retries: 0
+  #   condition: null
+  #   expect: null
+  #   on_failure: continue
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # # Step 12: 弹窗 - 请接回网线，并且确保机器狗放置原位
+  # - id: step_12
+  #   name: PlugNetworkConfirm
+  #   type: utility.confirm
+  #   params:
+  #     title: '操作提示'
+  #     message: '请接回网线，并且确保机器狗放置原位'
+  #     confirm_text: '确认'
+  #     allow_cancel: false
+  #   timeout: null
+  #   retries: 0
+  #   condition: null
+  #   expect: null
+  #   on_failure: continue
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # # Step 13: 机器狗回执
+  # - id: step_13
+  #   name: RobotDogReceipt
+  #   type: engineer.test
+  #   params:
+  #     command: 'vel_cmd=2%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: continue
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # Step 8: uwb设定id - 治具上uwb的id
+  - id: step_12.1
+    name: UWBSetID
+    type: engineer.test
+    params:
+      command: 'uwb=1,Vbot_D910FA7518C0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 9: uwb检测
+  - id: step_13
+    name: UWBDetection
+    type: engineer.test
+    params:
+      command: 'uwb=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 10: 蓝牙检测
+  - id: step_14
+    name: BluetoothDetection
+    type: engineer.test
+    params:
+      command: 'bt=0,-60%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 300
+    timeout: 350000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 11: 4g信号检测
+  - id: step_15
+    name: Signal4GDetection
+    type: engineer.test
+    params:
+      command: 'sig4g=0,-60%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 65000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 12: wifi检测
+  - id: step_16
+    name: WiFiDetection
+    type: engineer.test
+    params:
+      command: 'wifi=0,-50%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 300
+    timeout: 350000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 13: gnss检测
+  - id: step_17
+    name: GNSSDetection
+    type: engineer.test
+    params:
+      command: 'gnss=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+# Step 19: 获取版本
+  - id: step_19
+    name: ReadVersion
+    type: engineer.test
+    params:
+      command: 'version=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 20: 比对版本
+  - id: step_20
+    name: CompareVersion
+    type: case.compare_version
+    params:
+      version_step_id: 'step_19'
+      config_path: 'Config/config.yaml'
+    timeout: 5000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 19: poweroff
+
+  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL）
+  - id: step_mes_2
+    name: MesEnd2UploadResult
+    type: mes.upload_result
+    params:
+      prompt_overall_result: false
+      overall_result: '${context.result}'
+      error_message: '${context.error_message}'
+      use_mes_end: false
+    timeout: 15000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_18
+    name: poweroff
+    type: engineer.test
+    params:
+      command: 'poweroff=1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 65000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+timeout: null
+retries: 0
+on_failure: stop
+
+

@@ -1,0 +1,927 @@
+{
+  "commands": {
+    "enfac": {
+      "description": "工程模式管理",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        },
+        {
+          "name": "en",
+          "description": "工程模式状态 (0-退出, 1-进入)",
+          "required": false,
+          "valid_values": ["0", "1"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "查询工程模式状态 (返回enfac或exfac)",
+        "1": "写入工程模式 (en=1进入, en=0退出)"
+      }
+    },
+    "action_mode": {
+      "description": "进入模式",
+      "parameter_count": 5,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1", "2"]
+        },
+        {
+          "name": "mode",
+          "description": "模式名称",
+          "required": false,
+          "valid_values": ["burnin", "mtf", "mtb", "mtl", "mtr", "noise", "laydown", "stand", "stop", "mpc", "rl_stand", "navi", "restart"]
+        },
+        {
+          "name": "sec",
+          "description": "自动停止时间（秒），可选，超时后自动停止煲机",
+          "required": false
+        },
+        {
+          "name": "soc_min",
+          "description": "电量最低阈值（0-100%），可选，电量低于该值后自动停止煲机",
+          "required": false
+        },
+        {
+          "name": "sleep",
+          "description": "启动前休眠时间（秒），可选，休眠指定秒数后再开始运动",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "查询模式",
+        "1": "启动模式，可附加 sec（超时停止）、soc_min（电量不足停止）、sleep（延迟启动）参数",
+        "2": "关闭模式"
+      }
+    },
+    "version": {
+      "description": "获取版本信息",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0"]
+        }
+      ]
+    },
+    "pn": {
+      "description": "获取/写入序列号",
+      "parameter_count": 3,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        },
+        {
+          "name": "device",
+          "description": "设备名称",
+          "required": true,
+          "valid_values": ["sn", "s100", "x5"]
+        },
+        {
+          "name": "status",
+          "description": "状态/参数",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取序列号",
+        "1": "写入序列号"
+      }
+    },
+    "testinfo": {
+      "description": "获取/写入标志位信息",
+      "parameter_count": 3,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        },
+        {
+          "name": "device",
+          "description": "设备类型",
+          "required": true,
+          "valid_values": ["s100", "x5", "x5mod", "machine", "calib"]
+        },
+        {
+          "name": "status",
+          "description": "状态信息 (0-未通过, 1-通过)",
+          "required": false,
+          "valid_values": ["0", "1"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取标志位",
+        "1": "写入标志位"
+      }
+    },
+    "tactile": {
+      "description": "获取触摸状态信息",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0"]
+        },
+        {
+          "name": "expect",
+          "description": "0 无数据, 1 有数据",
+          "required": true,
+          "valid_values": ["0", "1"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取触摸状态信息"
+      }
+    },
+    "tts": {
+      "description": "TTS语音播放",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1", "2"]
+        },
+        {
+          "name": "text",
+          "description": "播放文本 (仅当op=1时有效)",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "播放\"大头起床了\" (机器语 tts_getup)",
+        "1": "播放指定文本音频",
+        "2": "拉取语音license"
+      }
+    },
+    "servo": {
+      "description": "舵机控制",
+      "parameter_count": 3,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1", "2"]
+        },
+        {
+          "name": "id",
+          "description": "舵机ID (仅当op=1时有效: 1=pitch, 2=yaw)",
+          "required": false,
+          "valid_values": ["1", "2"]
+        },
+        {
+          "name": "angle",
+          "description": "角度值 (仅当op=1时有效: -30到+30度)",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取舵机ID配置",
+        "1": "启动舵机控制",
+        "2": "限位标定（自动标定yaw轴限位：向右转到40度检测堵转标定最小限位，向左转到-40度检测堵转标定最大限位，然后执行对称化）"
+      }
+    },
+    "imucal": {
+      "description": "IMU校准",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1", "2"]
+        },
+        {
+          "name": "mode",
+          "description": "标定模式 (仅当op=2时有效: 1-单板零偏, 2-整机安装偏差)",
+          "required": false,
+          "valid_values": ["1", "2"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取标定信息和IMU本身信息",
+        "1": "开启IMU产测",
+        "2": "开启标定模式"
+      }
+    },
+    "lidar": {
+      "description": "获取雷达信息",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        },
+        {
+          "name": "address",
+          "description": "点云图片保存地址",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "查询雷达信息内参",
+        "1": "拍摄一帧点云"
+      }
+    },
+    "fan": {
+      "description": "控制风扇",
+      "parameter_count": 3,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1", "2"]
+        },
+        {
+          "name": "num",
+          "description": "风扇编号",
+          "required": true
+        },
+        {
+          "name": "pwm",
+          "description": "PWM值 (0-100, 仅op=1时有效)",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取风扇信息（风扇编号和转速）",
+        "1": "打开风扇（设置PWM值）",
+        "2": "关闭风扇（PWM设为0）"
+      }
+    },
+   
+    "rtc": {
+      "description": "系统时间查询RTC时间",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        },
+        {
+          "name": "date",
+          "description": "日期参数",
+          "required": false
+        },
+        {
+          "name": "time",
+          "description": "时间参数",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取RTC时间",
+        "1": "写入RTC时间"
+      }
+    },
+    "systemctl": {
+      "description": "在板端执行 systemctl start/stop 服务",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "action",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["start", "stop"]
+        },
+        {
+          "name": "service",
+          "description": "服务名称",
+          "required": true
+        }
+      ],
+      "operation_mapping": {
+        "start": "启动指定服务",
+        "stop": "停止指定服务"
+      }
+    },
+    "wifi": {
+      "description": "WiFi测试与自动配置",
+      "parameter_count": 3,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        },
+        {
+          "name": "sn",
+          "description": "设备SN（仅op=1时必填），用于从云端拉取ssid/password并写入wifi_autoconnect.conf",
+          "required": false
+        },
+        {
+          "name": "thres",
+          "description": "信号强度阈值（dBm，整数，例如: -70），仅op=0时有效，可选",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "连接Wifi并获取信号强度、MAC地址，可选thres参数设置信号强度阈值(dBm)",
+        "1": "通过SN从云端获取ssid/password，并写入/app_param/wifi_autoconnect.conf"
+      }
+    },
+    "gnss": {
+      "description": "获取GNSS信息",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0"]
+        }
+      ]
+    },
+    "sig4g": {
+      "description": "4G信号强度和网络测试",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        },
+        {
+          "name": "thres",
+          "description": "信号强度阈值（dBm，整数，例如: -90），仅op=0时有效，可选，低于该值则判断为不满足要求",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取4G信号强度，可选thres参数设置RSSI阈值(dBm)",
+        "1": "4G网卡ping测试(usb0.1/usb0.2 ping 8.8.8.8 10包，要求零丢包)"
+      }
+    },
+    "cantest": {
+      "description": "CAN总线通路测试",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0"]
+        },
+        {
+          "name": "ch",
+          "description": "通道配置，格式为 发送通道-接收通道1-接收通道2-...，第一个为发送，其余为接收（例如 4-5-6-7 表示4号发，5/6/7收）",
+          "required": true
+        }
+      ],
+      "operation_mapping": {
+        "0": "CAN总线通路测试：指定发送通道广播，指定接收通道监听（如 cantest=0,4-5-6-7%）"
+      }
+    },
+    "poweroff": {
+      "description": "关机",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["1"]
+        }
+      ],
+      "operation_mapping": {
+        "1": "安全关机"
+      }
+    },
+    "camera": {
+      "description": "相机控制",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        },
+        {
+          "name": "address",
+          "description": "拍摄照片保存地址",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取双目内参",
+        "1": "拍摄照片"
+      }
+    },
+    "ircamera": {
+      "description": "红外相机控制",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["1", "2"]
+        },
+        {
+          "name": "address",
+          "description": "拍摄照片保存地址",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "1": "拍摄红外照片",
+        "2": "红外相机验证"
+      }
+    },
+    "uwb": {
+      "description": "UWB控制",
+      "parameter_count": 5,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1", "2", "3", "4"]
+        },
+        {
+          "name": "tag_names",
+          "description": "单个标签名称 (仅op=1时有效); 多个标签名称用连字符'-'分隔，例如: Vbot1-Vbot2(仅op=4时有效)",
+          "required": false
+        },
+        {
+          "name": "num",
+          "description": "信令个数 (仅op=4时有效)",
+          "required": false
+        },
+        {
+          "name": "time",
+          "description": "每个信令的使用时间，单位秒 (仅op=4时有效)",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取UWB参数",
+        "1": "根据单个信令配对UWB",
+        "2": "清理配对信息",
+        "3": "整机UWB标定",
+        "4": "批量依次配对/移除 n 个信令，同时进行整机UWB标定，参数: tag_names,num,time"
+      }
+    },
+    "bt": {
+      "description": "蓝牙控制",
+      "parameter_count": 3,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1", "2"]
+        },
+        {
+          "name": "addr",
+          "description": "标签地址",
+          "required": false
+        },
+        {
+          "name": "thres",
+          "description": "信号强度阈值（dBm，整数，例如: -80），仅op=0时有效，可选，低于该值则判断为不满足要求",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取蓝牙(UWB)状态，可选thres参数设置RSSI阈值(dBm)",
+        "1": "配对蓝牙标签",
+        "2": "清理配对信息"
+      }
+    },
+    "zeropointcal": {
+      "description": "四足模具零点标定",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["1", "2"]
+        }
+      ],
+      "operation_mapping": {
+        "1": "四足模具零点标定",
+        "2": "检查四足模具零点标定是否偏差过大"
+      }
+    },
+    "upload": {
+      "description": "上传设备信息文件",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["1"]
+        }
+      ],
+      "operation_mapping": {
+        "1": "通过4G上传 /app_param/device.json 到云端"
+      }
+    },
+    "sensorcal": {
+      "description": "传感器标定",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1", "2", "3"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "头部舵机解锁",
+        "1": "头部舵机配置零位参数",
+        "2": "传感器标定（完整系统）",
+        "3": "无lidar传感器融合标定"
+      }
+    },
+    "light": {
+      "description": "控制耳灯",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        },
+        {
+          "name": "color",
+          "description": "颜色 (r=红色, g=绿色, b=蓝色)",
+          "valid_values": ["r", "g", "b", "red", "green", "blue"],
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "关闭耳灯",
+        "1": "打开耳灯"
+      }
+    },
+    "lcd": {
+      "description": "控制LCD屏幕",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["1", "2", "3", "4"]
+        },
+        {
+          "name": "color",
+          "description": "颜色 (white=白色, black=黑色, red=红色, green=绿色, blue=蓝色)，仅 op=1 时有效",
+          "valid_values": ["white", "black", "red", "green", "blue"],
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "1": "打开LCD",
+        "2": "关闭LCD",
+        "3": "开启信息显示",
+        "4": "关闭信息显示"
+      }
+    },
+    "iccid": {
+      "description": "获取SIM卡ICCID",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取SIM卡ICCID"
+      }
+    },
+    "charger": {
+      "description": "获取充电信息",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取桩输出（电压、电流、温度）"
+      }
+    },
+    "battery": {
+      "description": "获取电池信息 / 检查SOC范围",
+      "parameter_count": 3,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        },
+        {
+          "name": "low",
+          "description": "SOC下限百分比（op=1时必选）",
+          "required": false
+        },
+        {
+          "name": "high",
+          "description": "SOC上限百分比（op=1时可选）",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取电池信息（硬件版本、软件版本、最后告警、序列号、总电压、电流、剩余电量百分比）",
+        "1": "检查SOC是否在指定范围内，battery=1,low[,high]%，只有low时SOC>=low即通过，有high时low<=SOC<=high"
+      }
+    },
+    "fill_light": {
+      "description": "补光灯控制",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "关闭补光灯",
+        "1": "打开补光灯"
+      }
+    },
+    "socid": {
+      "description": "获取SOC ID",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true, 
+          "valid_values": ["0"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取SOC ID"
+      }
+    },
+    "transfer": {
+      "description": "文件传输",
+      "parameter_count": 3,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["1", "2"]
+        },
+        {
+          "name": "addrA",
+          "description": "源地址 (op=1时为机器上的路径, op=2时为电脑上的路径)",
+          "required": true
+        },
+        {
+          "name": "addrB",
+          "description": "目标地址 (op=1时为电脑上的路径, op=2时为机器上的路径)",
+          "required": true
+        }
+      ],
+      "operation_mapping": {
+        "1": "从机器传输文件到电脑 (将机器上的addrA地址文件复制到电脑的addrB位置)",
+        "2": "从电脑传输文件到机器 (将电脑上的addrA地址文件复制到机器的addrB位置)"
+      }
+    },
+    "efuse": {
+      "description": "获取/写入EFUSE",
+      "parameter_count": 3,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        },
+        {
+          "name": "device",
+          "description": "设备名称",
+          "required": true,
+          "valid_values": ["sn", "s100", "x5"]
+        },
+        {
+          "name": "pn",
+          "description": "状态/参数",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "0": "获取序列号",
+        "1": "写入序列号"
+      }
+    },
+    "motor_id": {
+      "description": "电机ID设置",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["1"]
+        }
+      ],
+      "operation_mapping": {
+        "1": "标定电机ID（根据vita01_config.json配置设置所有电机ID为1-12）"
+      }
+    },
+    "mic": {
+      "description": "麦克风收音检测",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "检测收音数据是否为全零",
+        "1": "音频回环测试（喇叭播放1kHz正弦波，FFT分析参考电路和4Mic是否正常）"
+      }
+    },
+    "motor_ota": {
+      "description": "电机固件升级",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["1", "2"]
+        },
+        {
+          "name": "file",
+          "description": "固件文件路径（本地路径，客户端会读取并发送）",
+          "required": true
+        },
+        {
+          "name": "motor_ids",
+          "description": "电机ID列表（仅op=2时有效，用-连接，如：1-2-3）",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "1": "对所有电机进行固件升级",
+        "2": "对指定motor id list进行固件升级"
+      }
+    },
+    "fac_offline": {
+      "description": "工厂离线标志位",
+      "parameter_count": 2,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1"]
+        },
+        {
+          "name": "value",
+          "description": "标志位值 (0-清除, 1-完成)",
+          "required": false,
+          "valid_values": ["0", "1"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "查询标志位",
+        "1": "设置标志位"
+      }
+    },
+    "stage": {
+      "description": "查询/写入 stage 标记",
+      "parameter_count": 3,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0", "1", "2"]
+        },
+        {
+          "name": "id",
+          "description": "stage ID (1-255)",
+          "required": true
+        },
+        {
+          "name": "value",
+          "description": "标记值 (0-未通过, 1-通过, 仅当op=1时有效)",
+          "required": false,
+          "valid_values": ["0", "1"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "查询 stage 标记",
+        "1": "写入 stage 标记",
+        "2": "检查前n个 stage 标记是否都为1，参数id表示n"
+      }
+    },
+    "vel_cmd": {
+      "description": "直线速度控制，发布 /vel_cmd 话题",
+      "parameter_count": 8,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["1", "2"]
+        },
+        {
+          "name": "act",
+          "description": "运动方向 (mtf: 前进, mtb: 后退)，op=1时必填",
+          "required": false,
+          "valid_values": ["mtf", "mtb"]
+        },
+        {
+          "name": "speed",
+          "description": "线速度 (m/s, 必须大于0)，op=1时必填",
+          "required": false
+        },
+        {
+          "name": "sec",
+          "description": "持续时间（秒），0或省略表示不自动停止",
+          "required": false
+        },
+        {
+          "name": "sleep",
+          "description": "延迟发送时间（秒），省略则默认30秒",
+          "required": false
+        },
+        {
+          "name": "dist_tol",
+          "description": "距离容忍度（米），仅当sec参数有效时使用",
+          "required": false
+        },
+        {
+          "name": "heading_tol",
+          "description": "航向容忍度（度），仅当sec参数有效时使用",
+          "required": false
+        },
+        {
+          "name": "heading_min_dist",
+          "description": "最小航向调整距离（米），仅当sec参数有效时使用, 位移超过5cm时才检查heading",
+          "required": false
+        }
+      ],
+      "operation_mapping": {
+        "1": "延迟后发布线速度指令，结果保存到/app_param/calib_report/vel_cmd_test.json（始终返回成功）",
+        "2": "校验vel_cmd_test.json结果文件（位移误差和heading检查）"
+      }
+    },
+    "imei": {
+      "description": "获取模组IMEI",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "查询IMEI"
+      }
+    }
+  }
+}

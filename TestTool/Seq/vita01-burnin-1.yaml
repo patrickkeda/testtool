@@ -1,0 +1,98 @@
+version: '1.0'
+metadata:
+  name: vita01-burnin-1
+  description: 'VITA 机器人煲机测试流程'
+  author: 'TestTool'
+  created_at: '2026-03-11T00:00:00.000000'
+  product: Vita01
+  station: BURNIN
+  version: '1.0'
+
+variables:
+  robot_ip: "192.168.126.2"
+  robot_port: 3579
+
+steps:
+  # Step 1: 扫描序列号
+  - id: step_1
+    name: ScanSN
+    type: scan.sn
+    params: {}
+    timeout: 5000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 2: 进入工程模式
+  - id: step_2
+    name: EnterEngineerMode
+    type: engineer.test
+    params:
+      command: 'enfac=1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 3: stage2设置为1 (stage=1,2,1%)
+  - id: step_3
+    name: ConfirmFusionFlag
+    type: engineer.test
+    params:
+      command: 'stage=1,5,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+      skip_log_response: true  # 跳过响应日志记录
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 4: 开始煲机动作
+  - id: step_4
+    name: StartBurnIn
+    type: engineer.test
+    params:
+      command: 'action_mode=1,navi,1800%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 5: 煲机倒计时 1800 秒
+  - id: step_5
+    name: BurnInCountdown
+    type: utility.delay
+    params:
+      duration_ms: 1800000
+      title: '煲机倒计时'
+      message: '机器人煲机中，请保持设备运行。剩余时间 {mmss}'
+      show_countdown: true
+    timeout: 1810000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null

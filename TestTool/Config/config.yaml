@@ -1,0 +1,201 @@
+app:
+  language: zh_CN
+  station_name: FT-1
+  theme: light
+logging:
+  level: INFO
+  dir: Result/Log
+  station_name: FT-1
+  rotation:
+    when: midnight
+    backupCount: 14
+    max_file_size: 104857600
+  test_log:
+    enabled: true
+    base_dir: Result/TestResult
+    date_format: '%Y%m%d'
+    filename: '{SN}_{product}_{station}_{version}_{port}_{timestamp}_{result}.log'
+    level: INFO
+    include_config: true
+    include_measurements: true
+  error_log:
+    enabled: true
+    base_dir: Result/Log
+    date_format: '%Y%m%d'
+    filename: '{SN}_{product}_{station}_{version}_{port}_{timestamp}.log'
+    level: ERROR
+    include_stack_trace: true
+  system_log:
+    enabled: true
+    base_dir: Result/Log
+    date_format: '%Y%m%d'
+    config_filename: CONFIG-{station}-{timestamp}.log
+    system_filename: SYSTEM-{station}-{timestamp}.log
+    level: INFO
+  remote_enabled: false
+  endpoint: null
+ports:
+  portA:
+    enabled: true
+    uut:
+      enabled: true
+      interface: tcp
+      serial:
+        port: COM7
+        baudrate: 115200
+        bytesize: 8
+        parity: N
+        stopbits: 1.0
+        timeout_ms: 2000
+        retries: 3
+        retry_backoff_ms: 200
+      tcp:
+        host: 192.168.125.2
+        port: 3579
+        timeout_ms: 2000
+        retries: 3
+    fixture:
+      enabled: true
+      serial:
+        port: COM7
+        baudrate: 115200
+        bytesize: 8
+        parity: N
+        stopbits: 1.0
+        timeout_ms: 2000
+        retries: 3
+        retry_backoff_ms: 200
+    instruments: {}
+    serial:
+      port: COM3
+      baudrate: 115200
+      bytesize: 8
+      parity: N
+      stopbits: 1.0
+      timeout_ms: 2000
+      retries: 3
+      retry_backoff_ms: 200
+    tcp:
+      host: 127.0.0.1
+      port: 5020
+      timeout_ms: 2000
+      retries: 3
+  portB:
+    enabled: true
+    uut:
+      enabled: true
+      interface: serial
+      serial:
+        port: COM7
+        baudrate: 115200
+        bytesize: 8
+        parity: N
+        stopbits: 1.0
+        timeout_ms: 2000
+        retries: 3
+        retry_backoff_ms: 200
+      tcp:
+        host: 127.0.0.1
+        port: 5020
+        timeout_ms: 2000
+        retries: 3
+    fixture:
+      enabled: true
+      serial:
+        port: COM7
+        baudrate: 115200
+        bytesize: 8
+        parity: N
+        stopbits: 1.0
+        timeout_ms: 2000
+        retries: 3
+        retry_backoff_ms: 200
+    instruments: {}
+    serial:
+      port: COM3
+      baudrate: 115200
+      bytesize: 8
+      parity: N
+      stopbits: 1.0
+      timeout_ms: 2000
+      retries: 3
+      retry_backoff_ms: 200
+    tcp:
+      host: 127.0.0.1
+      port: 5020
+      timeout_ms: 2000
+      retries: 3
+mes:
+  vendor: huaqin_qmes
+  base_url: http://10.51.66.36/API.MD4H/HQAPI
+  timeout_ms: 5000
+  retries: 3
+  heartbeat_interval_ms: 10000
+  credentials:
+    client_id: '100191775'
+    client_secret_enc: 191775@mesXZG
+    dll_path: bin/HQMES.dll
+    transport_mode: ''
+    h_token: ''
+    h_action: ''
+    op_group: ''
+    op_line: ''
+    op_pc: ''
+    op_shift: ''
+    start_api: MesStart
+    extra_info_position: BATROLL
+    extra_info_extinfo: ''
+    action_name: MES_DEBUG
+    upload_action_name: ''
+    tools_name: TestTool
+    tools_version: V1.0
+    sn_type: '1'
+    failure_error_code: '1'
+    ext_info: {}
+  endpoints:
+    mes_init: /mes/init
+    mes_start: /mes/start
+    mes_end: /mes/end
+    mes_uninit: /mes/uninit
+    mes_start3: /mes/start3
+    mes_end2: /mes/end2
+  headers:
+    Content-Type: application/json
+  station_id: MES_DEBUG
+  enabled: true
+printer:
+  enabled: true
+  channel: tcp
+  printer_name: ''
+  host: ''
+  port: 9100
+  timeout_ms: 3000
+  copies: 1
+  encoding: utf-8
+  preview: false
+  preview_only: false
+  save_preview: true
+  preview_dir: Result/print_preview
+  zpl_file: ''
+versions:
+  S100:
+    app_version: 1.0.0-202603132154+git09c1c7b98
+    sys_version: v2.2.24-2026030501
+  X5:
+    app_version: 1.0.0-202603132206+git09c1c7b98
+    sys_version: LNX6.1.83_PL5.2_V1.1.0_20260305-0804
+  MOTOR:
+    sw_version: 0.3.7.55
+  SERVO:
+    sw_version: v109.1.2.1
+  UWB:
+    sw_version: ''
+  LIDAR:
+    sw_version: WLR-722Z-Z-TYV1.3
+  BMS:
+    sw_version: 1.2.9
+test_sequence:
+  file: Seq/ft1.yaml
+  last_used: D:/testtools/TestTool-v0.4/TestTool/Seq/狗腿测试.yaml
+selfcheck:
+  checklist: config/selfcheck.yaml

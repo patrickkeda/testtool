@@ -1,0 +1,316 @@
+version: '1.0'
+metadata:
+  name: vita-servo-id1
+  description: 'VITA 舵机 + PLC + CAN 测试序列（ID1）'
+  author: 'TestTool'
+  created_at: '2025-12-18T00:00:00.000000'
+  product: Vita
+  station: SERVO_ID1
+  version: '1.0'
+
+# 可以在这里配置串口号、PLC 单元号、CAN 设备参数等
+variables:
+  # PLC Modbus RTU 串口参数（满足 115200 8O1）
+  plc_serial_port: 'COM3'        # 根据实际治具 PLC 所在串口修改
+  plc_baudrate: 115200
+  plc_parity: 'O'
+  plc_stopbits: 1
+  plc_bytesize: 8
+  plc_timeout: 5
+  plc_unit_id: 1
+
+  # CAN 设备参数（参考 can_gui，默认 USBCAN2，波特率 500000）
+  can_device_type: 4
+  can_device_index: 0
+  can_channel: 0
+  can_baudrate: 500000
+
+steps:
+  # Step 1: 扫描sn - 判断sn是否为19位，并且前7位是否为A010005
+  - id: step_1
+    name: ScanSN
+    type: scan.sn
+    params:
+      dialog_title: '扫描/输入产品SN'
+      hint: '请扫描/输入SN（共19位，且前7位为A010005）后回车'
+      regex: '^A010005[A-Z0-9]{12}$'
+      timeout_ms: 60000
+    timeout: 5000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+
+  # 步骤2: 连接 PLC (Modbus RTU 串口，115200 8O1)
+  - id: step_2
+    name: PlcConnect
+    type: plc.modbus.connect
+    params:
+      port: '${plc_serial_port}'
+      baudrate: ${plc_baudrate}
+      # 这里直接固定为 8O1，避免被配置中的默认 N81 覆盖
+      parity: 'O'
+      stopbits: 1
+      bytesize: 8
+      timeout: ${plc_timeout}
+      unit_id: ${plc_unit_id}
+    timeout: 10000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤3: 控制治具启动 - 在寄存器 002049 写 1
+  - id: step_3
+    name: JigStart_Write2049
+    type: plc.modbus.write_register
+    params:
+      address: 2049       # 对应表格中的 002049
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true      # 按线圈方式写入（与 plc-com-gui 一致）
+      description: '治具启动：写寄存器 002049 = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤4: 控制舵机上电 - 在寄存器 002053 写 1
+  - id: step_4
+    name: ServoPowerOn_Write2053
+    type: plc.modbus.write_register
+    params:
+      address: 2053       # 对应表格中的 002053
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '舵机上电：写寄存器 002053 = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤5: 连接 CAN 设备（波特率 500000）
+  - id: step_5
+    name: CanConnect
+    type: can.connect
+    params:
+      device_type: ${can_device_type}
+      device_index: ${can_device_index}
+      channel: ${can_channel}
+      baudrate: ${can_baudrate}
+    timeout: 10000
+    retries: 3
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤6: 向位置1转动 - 发送 CAN 帧 ID=0x00000601, 数据=23 00 61 2A 00 00 01 00
+  - id: step_6
+    name: ServoToPos1_SendCan1
+    type: can.send_frame
+    params:
+      frame_id: '0x00000601'
+      data: '23 00 61 2A 00 00 01 00'
+      description: '舵机转到位置1'
+    timeout: 3000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤7: 休息 3 秒
+  - id: step_7
+    name: WaitAfterPos1
+    type: utility.delay
+    params:
+      duration_ms: 3000
+    timeout: 5000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤8: 向位置2转动 - 发送 CAN 帧 ID=0x00000601, 数据=23 00 61 2A 00 08 01 00
+  - id: step_8
+    name: ServoToPos2_SendCan2
+    type: can.send_frame
+    params:
+      frame_id: '0x00000601'
+      data: '23 00 61 2A 00 08 01 00'
+      description: '舵机转到位置2'
+    timeout: 3000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤9: 再次休息 3 秒
+  - id: step_9
+    name: WaitAfterPos2
+    type: utility.delay
+    params:
+      duration_ms: 3000
+    timeout: 5000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤10: 返回位置1 - 再次发送 CAN 帧 ID=0x00000601, 数据=23 00 61 2A 00 00 01 00
+  - id: step_10
+    name: ServoBackToPos1_SendCan3
+    type: can.send_frame
+    params:
+      frame_id: '0x00000601'
+      data: '23 00 61 2A 00 00 01 00'
+      description: '舵机返回位置1'
+    timeout: 3000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤11: 返回位置1后再等待 3 秒
+  - id: step_11
+    name: WaitAfterBackPos1
+    type: utility.delay
+    params:
+      duration_ms: 3000
+    timeout: 5000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤12: 查看 PLC 寄存器 R2 (002051) 是否为 1
+  - id: step_12
+    name: CheckPlcR2_2051
+    type: plc.modbus.read_register
+    params:
+      address: 2051       # 对应表格中的 002051
+      count: 1
+      unit_id: ${plc_unit_id}
+      description: '检查 R2 (002051) 是否为 1'
+      use_coil: true
+      expected_value: 1   # 在步实现中直接比较 value == 1
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤13: 查看 PLC 寄存器 R3 (002052) 是否为 1
+  - id: step_13
+    name: CheckPlcR3_2052
+    type: plc.modbus.read_register
+    params:
+      address: 2052       # 对应表格中的 002052
+      count: 1
+      unit_id: ${plc_unit_id}
+      description: '检查 R3 (002052) 是否为 1'
+      use_coil: true
+      expected_value: 1
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤14: 控制治具关闭 - 在寄存器 002050 写 1
+  - id: step_14
+    name: JigStop_Write2050
+    type: plc.modbus.write_register
+    params:
+      address: 2050       # 对应表格中的 002050
+      value: 1
+      unit_id: ${plc_unit_id}
+      use_coil: true
+      description: '治具关闭：写寄存器 002050 = 1'
+    timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 可选收尾：断开 CAN 与 PLC 连接（失败时不影响整体结果）
+  - id: step_15
+    name: CanDisconnect
+    type: can.disconnect
+    params: {}
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_16
+    name: PlcDisconnect
+    type: plc.modbus.disconnect
+    params: {}
+    timeout: 5000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+# 序列级别默认配置
+timeout: null
+retries: 0
+on_failure: stop
+
+
+
+
+
