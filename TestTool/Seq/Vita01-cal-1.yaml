@@ -13,7 +13,20 @@ variables:
   robot_port: 3579
 
 steps:
-  # Step 1: 扫描序列号
+
+  # Step MES-0: MES初始化（MesInit）
+  - id: step_mes_0
+    name: MESInit
+    type: mes.heartbeat
+    params: {}
+    timeout: 8000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
   - id: step_1
     name: ScanSN
     type: scan.sn
@@ -28,6 +41,22 @@ steps:
     manual_judgment_config: null
 
   # Step 2: 进入工程模式
+
+  # Step MES-1: MesStart（按SN判站/获取工单）
+  - id: step_mes_1
+    name: MesStartCheckStation
+    type: mes.get_work_order
+    params:
+      sn: '${sn}'
+      expected_station: '${mes.effective_station}'
+    timeout: 15000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
   - id: step_2
     name: EnterEngineerMode
     type: engineer.test
@@ -216,6 +245,24 @@ steps:
     expect: null
     on_failure: fail
 
+
+  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL）
+  - id: step_mes_2
+    name: MesEnd2UploadResult
+    type: mes.upload_result
+    params:
+      prompt_overall_result: false
+      overall_result: '${context.result}'
+      error_message: '${context.error_message}'
+      use_mes_end: false
+    timeout: 15000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
 timeout: null
 retries: 0
 on_failure: stop
