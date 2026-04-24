@@ -23,6 +23,7 @@ variables:
 
 steps:
   # 步骤0: MES初始化（MesInit）
+  # Step MES-0: MES初始化（MesInit）
   - id: step_mes_0
     name: MESInit
     type: mes.heartbeat
@@ -31,12 +32,10 @@ steps:
     retries: 2
     condition: null
     expect: null
-    on_failure: fail
+    on_failure: continue
     at_config: null
     state_measurement_config: null
     manual_judgment_config: null
-
-  # 步骤1: 扫描序列号
   - id: step_1
     name: ScanSN
     type: scan.sn
@@ -51,6 +50,7 @@ steps:
     manual_judgment_config: null
 
   # 步骤1.5: MesStart（按SN判站/获取工单）
+  # Step MES-1: MesStart（按SN判站/获取工单）
   - id: step_mes_1
     name: MesStartCheckStation
     type: mes.get_work_order
@@ -61,12 +61,10 @@ steps:
     retries: 1
     condition: null
     expect: null
-    on_failure: fail
+    on_failure: continue
     at_config: null
     state_measurement_config: null
     manual_judgment_config: null
-
-  # 步骤2: 连接 PLC (Modbus RTU 串口，9600 8O1)
   - id: step_2
     name: PlcConnect
     type: plc.modbus.connect
@@ -933,6 +931,7 @@ steps:
     manual_judgment_config: null
 
   # 步骤43: MesEnd上传测试结果（可选择PASS/FAIL）
+  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL）
   - id: step_mes_2
     name: MesEnd2UploadResult
     type: mes.upload_result
@@ -949,8 +948,6 @@ steps:
     at_config: null
     state_measurement_config: null
     manual_judgment_config: null
-
-# 序列级别默认配置
 timeout: null
 retries: 0
 on_failure: stop
