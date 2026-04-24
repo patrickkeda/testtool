@@ -170,7 +170,7 @@ printer:
   host: ''
   port: 9100
   timeout_ms: 3000
-  copies: 1
+  copies: 2
   encoding: utf-8
   preview: false
   preview_only: false

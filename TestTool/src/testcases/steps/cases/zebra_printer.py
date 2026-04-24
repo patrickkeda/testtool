@@ -230,6 +230,64 @@ class ZebraPrintStep(BaseStep):
         finally:
             close_printer(h_printer)
 
+    def print_imei_and_scramble(
+        self,
+        ctx: Context,
+        imei: str,
+        scramble: str,
+        *,
+        channel: str = "local",
+        printer_name: str = "ZDesigner 110Xi4 600 dpi (副本 1)",
+        host: str = "",
+        port: int = 9100,
+        copies: int = 1,
+    ) -> StepResult:
+        """
+        固定模板快速打印入口：只需传 IMEI 和扰码。
+
+        该方法会使用当前已调好的固定模板参数生成 ZPL 并直接打印。
+        """
+        zpl = self._build_fixed_fields_zpl(imei=imei, scramble=scramble)
+        params: Dict[str, Any] = {
+            "channel": channel,
+            "printer_name": printer_name,
+            "host": host,
+            "port": int(port),
+            "copies": max(1, int(copies)),
+            "zpl": zpl,
+            "save_preview": True,
+            "preview": False,
+        }
+        return self.run_once(ctx, params)
+
+    @staticmethod
+    def _build_fixed_fields_zpl(imei: str, scramble: str) -> str:
+        # 当前定版模板参数（600dpi, 104x31mm）
+        dpi = 600
+        label_w_mm, label_h_mm = 104.0, 31.0
+        imei_x_mm, imei_y_mm = 11.2, 27.66
+        scramble_x_mm, scramble_y_mm = 59.6, 25.0
+        imei_h_mm, imei_w_mm = 1.8, 1.1
+        scramble_h_mm, scramble_w_mm = 3.0, 2.2
+        imei_prefix, scramble_prefix = "", " "
+
+        def mm_to_px(mm: float) -> int:
+            return int(round(mm * float(dpi) / 25.4))
+
+        return (
+            "^XA\n"
+            f"^PW{mm_to_px(label_w_mm)}\n"
+            f"^LL{mm_to_px(label_h_mm)}\n"
+            "^CI28\n"
+            f"^FO{mm_to_px(imei_x_mm)},{mm_to_px(imei_y_mm)}"
+            f"^A0N,{mm_to_px(imei_h_mm)},{mm_to_px(imei_w_mm)}"
+            f"^FD{imei_prefix}{imei}^FS\n"
+            f"^FO{mm_to_px(scramble_x_mm)},{mm_to_px(scramble_y_mm)}"
+            f"^A0N,{mm_to_px(scramble_h_mm)},{mm_to_px(scramble_w_mm)}"
+            f"^FD{scramble_prefix}{scramble}^FS\n"
+            "^XZ"
+        )
+
     @staticmethod
     def _build_installer_hint(params: Dict[str, Any]) -> str:
         installer_path = str(params.get("installer_path", "") or "").strip()
