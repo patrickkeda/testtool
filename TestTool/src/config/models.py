@@ -135,7 +135,7 @@ class MesCredentials(BaseModel):
     tools_name: str = Field("TestTool", description="QMES Tools工具名")
     tools_version: str = Field("V1.0", description="QMES Tools版本号")
     sn_type: str = Field("1", description="QMES SNType，默认1")
-    failure_error_code: str = Field("1", description="上传失败默认 ErrorCode（PASS 固定 0）")
+    failure_error_code: str = Field("error", description="上传失败默认 ErrorCode（PASS 固定 0）")
     ext_info: Dict[str, Any] = Field(default_factory=dict, description="QMES MesStart3 ExtInfo")
 
     model_config = ConfigDict(extra="allow")

@@ -11,6 +11,7 @@ metadata:
 variables:
   robot_ip: "192.168.126.2"
   robot_port: 3579
+  zebra_printer_name: 'ZDesigner 110Xi4 600 dpi (副本 1)'
 
 steps:
 
@@ -132,13 +133,13 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 4: 读取 SOC (读取 x5 和 s100 的 soc_id)
+  # Step 6: 读取 imei (读取 x5 和 s100 的 soc_id)
   # 注意：socid=0% 命令可能返回 x5 和 s100 的 soc_id，需要根据实际响应格式解析
-  - id: step_4
+  - id: step_6
     name: ReadSOC
     type: engineer.test
     params:
-      command: 'socid=0%'
+      command: 'imei=0%'
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
@@ -151,14 +152,14 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 5: 创建 device.json 文件
+  # Step 7: 创建 device.json 文件
   # 从前面步骤的结果中提取数据并创建 JSON 文件
   # 文件路径: TestTool\Result\upload\${sn}\device.json
-  - id: step_5
+  - id: step_7
     name: CreateDeviceJson
     type: case.create_device_json
     params:
-      step_6_id: 'step_6'
+      imei_step_id: 'step_6'
       output_dir: 'Result/upload'
     timeout: 30000
     retries: 1
@@ -169,9 +170,9 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 6: 将 JSON 推送到狗上
+  # Step 8: 将 JSON 推送到狗上
   # 注意：transfer=2,<addrA>,<addrB>% 表示从 addrA 推送到 addrB
-  - id: step_6
+  - id: step_8
     name: UploadJsonToRobot
     type: engineer.test
     params:
@@ -188,13 +189,31 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
  
-  # Step 7: 将 JSON 推送到云端
+  # Step 9: 将 JSON 推送到云端
   # 注意：执行 JSON 文件的云端上传操作，完成测试数据的云端备份
-  - id: step_7
+  - id: step_9
     name: UploadJsonToCloud
     type: engineer.test
     params:
       command: 'upload=1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 6: 读取 扰码 (读取 x5 和 s100 的 soc_id)
+  - id: step_10.1
+    name: ReadSOC
+    type: engineer.test
+    params:
+      command: 'scramble=0,${sn},${imei}%'
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
@@ -469,6 +488,31 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
+  # Step 16.1: 标签打印（SN/IMEI/扰码）
+  - id: step_16.1
+    name: ZebraTemplatePrint
+    type: printer.zebra
+    params:
+      channel: local
+      printer_name: '${zebra_printer_name}'
+      copies: 1
+      zpl_file: 'Seq/zebra_sn_label.zpl'
+      encoding: 'utf-8'
+      timeout_ms: 3000
+      preview: true
+      preview_only: false
+      save_preview: true
+      preview_dir: 'Result/print_preview'
+      preview_file_name: 'label_${sn}.zpl'
+    timeout: 20000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
   # Step 17: Efuse 写入 SN
   - id: step_17
     name: EfuseSN
@@ -604,8 +648,6 @@ steps:
     at_config: null
     state_measurement_config: null
     manual_judgment_config: null
-
-
 
   # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL）
   - id: step_mes_2

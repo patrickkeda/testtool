@@ -220,6 +220,12 @@ class CompareVersionStep(BaseStep):
                 mismatches.append(f"{key}.sw_version 期望 '{expected_value}'，实际 'EMPTY'")
                 continue
 
+            # UWB payload may include both anchor/tag where tag can be "unknown".
+            # Treat this type as passed when any instance reports the expected version.
+            if key == "UWB":
+                if any(str(inst.get("sw_version", "") or "").strip() == expected_value for inst in actual_instances):
+                    continue
+
             for inst in actual_instances:
                 actual_value = str(inst.get("sw_version", "") or "").strip()
                 if actual_value != expected_value:
@@ -273,8 +279,11 @@ class CompareVersionStep(BaseStep):
             for item in versions:
                 if not isinstance(item, dict):
                     continue
-                device_id = str(item.get("device_id", "") or "").strip()
-                if not device_id:
+                raw_device_id = item.get("device_id")
+                if raw_device_id is None:
+                    continue
+                device_id = str(raw_device_id).strip()
+                if device_id == "":
                     continue
 
                 name = str(item.get("name", "") or "").strip()

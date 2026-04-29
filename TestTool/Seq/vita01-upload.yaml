@@ -128,13 +128,13 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 6: 读取 SOC (读取 x5 和 s100 的 soc_id)
+  # Step 6: 读取 imei (读取 x5 和 s100 的 soc_id)
   # 注意：socid=0% 命令可能返回 x5 和 s100 的 soc_id，需要根据实际响应格式解析
   - id: step_6
     name: ReadSOC
     type: engineer.test
     params:
-      command: 'socid=0%'
+      command: 'imei=0%'
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
@@ -154,7 +154,7 @@ steps:
     name: CreateDeviceJson
     type: case.create_device_json
     params:
-      step_6_id: 'step_6'
+      imei_step_id: 'step_6'
       output_dir: 'Result/upload'
     timeout: 30000
     retries: 1
@@ -244,7 +244,7 @@ steps:
     name: WiFiTest
     type: engineer.test
     params:
-      command: 'wifi=0%'
+      command: 'wifi=1,${sn}%'
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 300
@@ -465,23 +465,23 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 23:offline
-  - id: step_23
-    name: offline
-    type: engineer.test
-    params:
-      command: 'fac_offline=1,1%'
-      robot_ip: '${robot_ip}'
-      port: ${robot_port}
-      timeout: 30
-    timeout: 35000
-    retries: 1
-    condition: null
-    expect: null
-    on_failure: fail
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
+  # # Step 23:offline
+  # - id: step_23
+  #   name: offline
+  #   type: engineer.test
+  #   params:
+  #     command: 'fac_offline=1,1%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
 
   # Step 24: Efuse 写入 SN
   - id: step_24
@@ -516,38 +516,38 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 8: 站立
-  - id: step_8
-    name: StandUp
-    type: engineer.test
-    params:
-      command: 'action_mode=1,laydown%'
-      robot_ip: '${robot_ip}'
-      port: ${robot_port}
-      timeout: 30
-    timeout: 35000
-    retries: 1
-    condition: null
-    expect: null
-    on_failure: fail
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
+  # # Step 8: 站立
+  # - id: step_8
+  #   name: StandUp
+  #   type: engineer.test
+  #   params:
+  #     command: 'action_mode=1,laydown%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
 
-  # Step 4: 延时 100 秒
-  - id: step_4
-    name: DelayAfterPowerOn
-    type: utility.delay
-    params:
-      duration_ms: 1300
-    timeout: 1350
-    retries: 0
-    condition: null
-    expect: null
-    on_failure: fail
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
+  # # Step 4: 延时 100 秒
+  # - id: step_4
+  #   name: DelayAfterPowerOn
+  #   type: utility.delay
+  #   params:
+  #     duration_ms: 1300
+  #   timeout: 1350
+  #   retries: 0
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
 
   # Step 25: 下电
   - id: step_25

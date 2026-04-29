@@ -101,6 +101,7 @@ class GCANDevice:
         self.channel = channel
         self.dll = None
         self.allow_simulation = allow_simulation
+        self.last_error = ""
         self._load_dll()
     
     def _load_dll(self):
@@ -209,6 +210,7 @@ class GCANDevice:
     def open(self) -> bool:
         """打开设备"""
         if self.dll is None:
+            self.last_error = "CAN DLL 未加载，无法打开设备。"
             print("模拟模式: 打开设备")
             return True
         
@@ -216,8 +218,13 @@ class GCANDevice:
             result = self.dll.OpenDevice(self.device_type, self.device_index, 0)
             if result == STATUS_OK:
                 print(f"成功打开设备: type={self.device_type}, index={self.device_index}")
+                self.last_error = ""
                 return True
             else:
+                self.last_error = (
+                    f"OpenDevice 返回码: {result}，"
+                    f"device_type={self.device_type}, device_index={self.device_index}"
+                )
                 print(f"打开设备失败，返回码: {result}")
                 print(f"  设备类型: {self.device_type} (USBCAN1=3, USBCAN2=4, USBCANFD=6)")
                 print(f"  设备索引: {self.device_index}")
@@ -228,6 +235,7 @@ class GCANDevice:
                 print("    4. 设备类型不正确（如果使用USBCAN1，请改为3；如果使用USBCANFD，请改为6）")
                 return False
         except Exception as e:
+            self.last_error = f"OpenDevice 调用异常: {e}"
             print(f"打开设备失败: {e}")
             import traceback
             traceback.print_exc()
@@ -236,6 +244,7 @@ class GCANDevice:
     def init_can(self, baud_rate: int = 500000) -> bool:
         """初始化CAN通道"""
         if self.dll is None:
+            self.last_error = "CAN DLL 未加载，无法初始化通道。"
             print(f"模拟模式: 初始化CAN通道 {self.channel}, 波特率={baud_rate}")
             return True
         
@@ -255,11 +264,16 @@ class GCANDevice:
             result = self.dll.InitCAN(self.device_type, self.device_index, self.channel, byref(init_config))
             if result == STATUS_OK:
                 print(f"成功初始化CAN通道: channel={self.channel}, baud_rate={baud_rate}")
+                self.last_error = ""
                 return True
             else:
+                self.last_error = (
+                    f"InitCAN 返回码: {result}，channel={self.channel}, baud_rate={baud_rate}"
+                )
                 print(f"初始化CAN失败，返回码: {result}")
                 return False
         except Exception as e:
+            self.last_error = f"InitCAN 调用异常: {e}"
             print(f"初始化CAN失败: {e}")
             return False
     
@@ -283,6 +297,7 @@ class GCANDevice:
     def start_can(self) -> bool:
         """启动CAN通道"""
         if self.dll is None:
+            self.last_error = "CAN DLL 未加载，无法启动通道。"
             print(f"模拟模式: 启动CAN通道 {self.channel}")
             return True
         
@@ -290,11 +305,14 @@ class GCANDevice:
             result = self.dll.StartCAN(self.device_type, self.device_index, self.channel)
             if result == STATUS_OK:
                 print(f"成功启动CAN通道: channel={self.channel}")
+                self.last_error = ""
                 return True
             else:
+                self.last_error = f"StartCAN 返回码: {result}，channel={self.channel}"
                 print(f"启动CAN失败，返回码: {result}")
                 return False
         except Exception as e:
+            self.last_error = f"StartCAN 调用异常: {e}"
             print(f"启动CAN失败: {e}")
             return False
     
@@ -343,9 +361,13 @@ class GCANDevice:
             recv_buffer = (CAN_OBJ * max_count)()
             result = self.dll.Receive(self.device_type, self.device_index, self.channel, byref(recv_buffer), max_count, timeout_ms)
             
-            if result == STATUS_OK:
+            # Receive 返回值通常是“本次接收到的帧数”：
+            # 0 = 无数据，>0 = 接收到的帧数量，<0/异常值 = 失败。
+            # 之前按 STATUS_OK(=1) 判断会把 result=2/3... 误判为失败。
+            if result and result > 0:
                 messages = []
-                for i in range(max_count):
+                recv_count = min(int(result), max_count)
+                for i in range(recv_count):
                     can_obj = recv_buffer[i]
                     if can_obj.DataLen > 0:
                         frame_id = can_obj.ID
@@ -381,6 +403,7 @@ class CANProtocolSender:
         self.device = GCANDevice(device_type, device_index, channel)
         self.receiving = False
         self.receive_callback = None
+        self.last_error = ""
     
     def connect(self, baud_rate: int = 500000) -> bool:
         """连接设备
@@ -403,6 +426,7 @@ class CANProtocolSender:
             error_msg += "3. CAN设备驱动未安装\n"
             error_msg += "4. DLL文件损坏或版本不匹配"
             print(f"[CAN] 错误: {error_msg}")
+            self.last_error = error_msg
             raise RuntimeError(error_msg)
         
         # 步骤1: 打开设备
@@ -414,6 +438,9 @@ class CANProtocolSender:
             print(f"[CAN]   1. 检查CAN设备是否已连接并安装驱动")
             print(f"[CAN]   2. 检查设备管理器中CAN设备是否正常识别")
             print(f"[CAN]   3. 确认device_type和device_index参数正确")
+            if self.device.last_error:
+                error_msg += f"\n底层信息: {self.device.last_error}"
+            self.last_error = error_msg
             return False
         
         # 步骤2: 初始化CAN
@@ -425,6 +452,9 @@ class CANProtocolSender:
             print(f"[CAN]   1. 检查波特率设置是否正确")
             print(f"[CAN]   2. 检查CAN设备是否支持该波特率")
             print(f"[CAN]   3. 检查通道号是否正确")
+            if self.device.last_error:
+                error_msg += f"\n底层信息: {self.device.last_error}"
+            self.last_error = error_msg
             self.device.close()
             return False
         
@@ -436,10 +466,14 @@ class CANProtocolSender:
             print(f"[CAN] 诊断建议:")
             print(f"[CAN]   1. 检查CAN总线是否正常")
             print(f"[CAN]   2. 检查是否有其他程序占用CAN设备")
+            if self.device.last_error:
+                error_msg += f"\n底层信息: {self.device.last_error}"
+            self.last_error = error_msg
             self.device.close()
             return False
         
         print(f"[CAN] ✓ CAN设备连接成功")
+        self.last_error = ""
         return True
     
     def send(self, frame_id: str, data: str) -> bool:

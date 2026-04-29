@@ -11,7 +11,7 @@
 from ...base import BaseStep, StepResult
 from ...context import Context
 from ..utility.version_payload import normalize_version_payload
-from typing import Dict, Any
+from typing import Dict, Any, List
 import asyncio
 import sys
 import os
@@ -23,6 +23,36 @@ from types import MethodType
 
 class EngineerTestStep(BaseStep):
     """工程师测试步骤 - 调用 test_engineer_client.py"""
+    
+    @staticmethod
+    def _parse_pass_on_error_tokens(raw_value: Any) -> List[str]:
+        """解析失败转通过关键字列表。"""
+        if raw_value is None:
+            return []
+        if isinstance(raw_value, str):
+            token = raw_value.strip()
+            return [token] if token else []
+        if isinstance(raw_value, (list, tuple, set)):
+            tokens: List[str] = []
+            for item in raw_value:
+                token = str(item).strip()
+                if token:
+                    tokens.append(token)
+            return tokens
+        token = str(raw_value).strip()
+        return [token] if token else []
+
+    @staticmethod
+    def _build_failure_text(test_result: Any, json_response: Any, error_message: str = "") -> str:
+        """拼接可用于关键字匹配的失败文本。"""
+        parts: List[str] = []
+        if error_message:
+            parts.append(str(error_message))
+        if test_result is not None:
+            parts.append(str(test_result))
+        if json_response:
+            parts.append(str(json_response))
+        return " | ".join(parts)
     
     def run_once(self, ctx: Context, params: Dict[str, Any]) -> StepResult:
         """
@@ -63,6 +93,9 @@ class EngineerTestStep(BaseStep):
             # 这样可以避免外层超时（asyncio.wait_for）比内层 HTTP 请求超时短导致的连接中断问题
             timeout = self._resolve_int_param(params.get("timeout", 180), ctx, default=180)
             skip_log_response = params.get("skip_log_response", False)  # 是否跳过日志记录响应
+            pass_on_error_tokens = self._parse_pass_on_error_tokens(
+                params.get("treat_error_contains_as_pass")
+            )
             
             # 优先使用 command，如果没有则使用 test_case
             if command:
@@ -389,6 +422,19 @@ class EngineerTestStep(BaseStep):
                         data=result_data
                     )
                 else:
+                    failure_text = self._build_failure_text(result, json_response)
+                    if pass_on_error_tokens and any(token in failure_text for token in pass_on_error_tokens):
+                        ctx.log_warning(
+                            f"工程测试原始结果为失败，但失败信息包含放行关键字 {pass_on_error_tokens}，按通过处理"
+                        )
+                        result_data["result"] = "success_by_error_text_match"
+                        result_data["failure_text"] = failure_text
+                        result_data["pass_on_error_tokens"] = pass_on_error_tokens
+                        return StepResult(
+                            passed=True,
+                            message=f"工程测试按关键字放行通过: {test_arg}",
+                            data=result_data
+                        )
                     return StepResult(
                         passed=False,
                         message=f"工程测试失败: {test_arg}",
@@ -403,6 +449,22 @@ class EngineerTestStep(BaseStep):
                     )
                     
             except asyncio.TimeoutError:
+                if pass_on_error_tokens and any(token in "timeout" for token in pass_on_error_tokens):
+                    ctx.log_warning(
+                        f"工程测试超时，但命中放行关键字 {pass_on_error_tokens}，按通过处理"
+                    )
+                    return StepResult(
+                        passed=True,
+                        message=f"工程测试超时按关键字放行通过: {test_arg}",
+                        data={
+                            "test_case": test_case or command,
+                            "robot_ip": robot_ip,
+                            "port": port,
+                            "result": "success_by_error_text_match",
+                            "failure_text": "timeout",
+                            "pass_on_error_tokens": pass_on_error_tokens
+                        }
+                    )
                 ctx.log_error(f"测试超时: {timeout}秒")
                 return StepResult(
                     passed=False,
@@ -411,6 +473,23 @@ class EngineerTestStep(BaseStep):
                     error_code="ENG_TEST_ERR_TIMEOUT"
                 )
             except ImportError as e:
+                failure_text = self._build_failure_text(None, json_response, str(e))
+                if pass_on_error_tokens and any(token in failure_text for token in pass_on_error_tokens):
+                    ctx.log_warning(
+                        f"导入工程测试客户端失败，但失败信息包含放行关键字 {pass_on_error_tokens}，按通过处理"
+                    )
+                    return StepResult(
+                        passed=True,
+                        message=f"工程测试导入异常按关键字放行通过: {test_arg}",
+                        data={
+                            "test_case": test_case or command,
+                            "robot_ip": robot_ip,
+                            "port": port,
+                            "result": "success_by_error_text_match",
+                            "failure_text": failure_text,
+                            "pass_on_error_tokens": pass_on_error_tokens
+                        }
+                    )
                 ctx.log_error(f"导入测试客户端失败: {e}")
                 return StepResult(
                     passed=False,
@@ -419,6 +498,23 @@ class EngineerTestStep(BaseStep):
                     error_code="ENG_TEST_ERR_IMPORT_FAILED"
                 )
             except Exception as e:
+                failure_text = self._build_failure_text(None, json_response, str(e))
+                if pass_on_error_tokens and any(token in failure_text for token in pass_on_error_tokens):
+                    ctx.log_warning(
+                        f"工程测试异常，但失败信息包含放行关键字 {pass_on_error_tokens}，按通过处理"
+                    )
+                    return StepResult(
+                        passed=True,
+                        message=f"工程测试异常按关键字放行通过: {test_arg}",
+                        data={
+                            "test_case": test_case or command,
+                            "robot_ip": robot_ip,
+                            "port": port,
+                            "result": "success_by_error_text_match",
+                            "failure_text": failure_text,
+                            "pass_on_error_tokens": pass_on_error_tokens
+                        }
+                    )
                 ctx.log_error(f"测试执行异常: {e}")
                 import traceback
                 ctx.log_error(f"异常堆栈: {traceback.format_exc()}")

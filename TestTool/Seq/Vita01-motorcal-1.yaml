@@ -140,7 +140,7 @@ steps:
     name: zeropointcalZero
     type: engineer.test
     params:
-      command: 'zeropointcal=1%'
+      command: 'zeropointcal=1,0.003%'
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 60
@@ -206,7 +206,7 @@ steps:
     name: StereoVisionDetection
     type: engineer.test
     params:
-      command: 'ircamera=1,Result/ircamera/${sn}%'
+      command: 'ircamera=1%'
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
@@ -219,23 +219,23 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 7: 舵机标定
-  - id: step_12
-    name: ServoCalibration
-    type: engineer.test
-    params:
-      command: 'servo=2%'
-      robot_ip: '${robot_ip}'
-      port: ${robot_port}
-      timeout: 90
-    timeout: 35000
-    retries: 1
-    condition: null
-    expect: null
-    on_failure: fail
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
+  # # Step 7: 舵机标定
+  # - id: step_12
+  #   name: ServoCalibration
+  #   type: engineer.test
+  #   params:
+  #     command: 'servo=2%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 90
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
 
   # # Step 11: 弹窗 - 请将网线拔掉，并等待机器狗行走
   # - id: step_11
@@ -255,41 +255,59 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # Step 12: 弹窗 - 请接回网线，并且确保机器狗放置原位
-  # - id: step_12
-  #   name: PlugNetworkConfirm
-  #   type: utility.confirm
-  #   params:
-  #     title: '操作提示'
-  #     message: '请接回网线，并且确保机器狗放置原位'
-  #     confirm_text: '确认'
-  #     allow_cancel: false
-  #   timeout: null
-  #   retries: 0
-  #   condition: null
-  #   expect: null
-  #   on_failure: continue
-  #   at_config: null
-  #   state_measurement_config: null
-  #   manual_judgment_config: null
+  # Step 11: 机器狗回执
+  - id: step_11
+    name: RobotDogReceipt
+    type: engineer.test
+    params:
+      command: 'tactile=0,0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
 
-  # # Step 13: 机器狗回执
-  # - id: step_13
-  #   name: RobotDogReceipt
-  #   type: engineer.test
-  #   params:
-  #     command: 'vel_cmd=2%'
-  #     robot_ip: '${robot_ip}'
-  #     port: ${robot_port}
-  #     timeout: 30
-  #   timeout: 35000
-  #   retries: 1
-  #   condition: null
-  #   expect: null
-  #   on_failure: continue
-  #   at_config: null
-  #   state_measurement_config: null
-  #   manual_judgment_config: null
+  # Step 12: 弹窗 - 请接回网线，并且确保机器狗放置原位
+  - id: step_12
+    name: PlugNetworkConfirm
+    type: utility.confirm
+    params:
+      title: '操作提示'
+      message: '请在按确认键后10秒抚摸狗屁股'
+      confirm_text: '确认'
+      allow_cancel: false
+    timeout: null
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 13: 机器狗回执
+  - id: step_13
+    name: RobotDogReceipt
+    type: engineer.test
+    params:
+      command: 'tactile=0,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
 
   # Step 8: uwb设定id - 治具上uwb的id
   - id: step_12.1
@@ -350,7 +368,7 @@ steps:
     name: Signal4GDetection
     type: engineer.test
     params:
-      command: 'sig4g=0,-60%'
+      command: 'sig4g=0,-75%'
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 60
@@ -362,6 +380,24 @@ steps:
     at_config: null
     state_measurement_config: null
     manual_judgment_config: null
+
+  # # Step 11: 4g信号检测
+  # - id: step_15.1
+  #   name: Signal4GDetection
+  #   type: engineer.test
+  #   params:
+  #     command: 'sig4g=1%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 60
+  #   timeout: 65000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
 
   # Step 12: wifi检测
   - id: step_16

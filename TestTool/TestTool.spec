@@ -12,11 +12,23 @@ _dll_candidates = [
 ]
 _dll_datas = [(str(p.resolve()), "bin") for p in _dll_candidates if p.is_file()]
 
+# CAN vendor DLLs (ECanVci64 / ECANFDVCI64)
+# Put these files in one of the candidate paths below, then rebuild.
+_can_dll_candidates = [
+    SPEC_ROOT / "build" / "can_dll" / "ECanVci64.dll",
+    SPEC_ROOT / "build" / "can_dll" / "ECANFDVCI64.dll",
+    SPEC_ROOT / "build" / "can_dll" / "CHUSBDLL64.dll",
+    SPEC_ROOT / "test" / "canapp" / "ECanVci64.dll",
+    SPEC_ROOT / "test" / "canapp" / "ECANFDVCI64.dll",
+    SPEC_ROOT / "test" / "canapp" / "CHUSBDLL64.dll",
+]
+_can_dll_datas = [(str(p.resolve()), "test/canapp") for p in _can_dll_candidates if p.is_file()]
+
 a = Analysis(
     ['src\\app\\main.py'],
     pathex=['.'],
     binaries=[],
-    datas=[('Config', 'Config'), ('Seq', 'Seq')] + _dll_datas,
+    datas=[('Config', 'Config'), ('Seq', 'Seq')] + _dll_datas + _can_dll_datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

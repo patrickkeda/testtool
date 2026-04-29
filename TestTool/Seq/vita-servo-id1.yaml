@@ -115,6 +115,25 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
+  # 步骤3.1: 弹窗确认气缸是否到位（无法看到舵机齿轮）
+  - id: step_3_1
+    name: ConfirmCylinderInPlace
+    type: utility.confirm
+    params:
+      title: '操作提示'
+      message: '请检查气缸是否到位（无法看到舵机齿轮）'
+      confirm_text: '到位'
+      cancel_text: '未到位'
+      allow_cancel: true
+    timeout: null
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
   # 步骤4: 控制舵机上电 - 在寄存器 002053 写 1
   - id: step_4
     name: ServoPowerOn_Write2053
@@ -280,6 +299,29 @@ steps:
       use_coil: true
       expected_value: 1
     timeout: 5000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤13.1: 读取舵机软件版本（子索引 0x01，Uint32）
+  # 协议参考：读取发送参数 = 40 00 61 01 00 00 00 00（ID=1）
+  - id: step_13_1
+    name: ReadServoVersion_SendCan
+    type: can.send_frame
+    params:
+      frame_id: '0x00000601'
+      data: '40 00 61 01 00 00 00 00'
+      description: '读取舵机软件版本（0x6100/0x01）'
+      wait_response: true
+      response_timeout_ms: 500
+      response_max_count: 30
+      decode_servo_version: true
+      version_required: false
+    timeout: 3000
     retries: 2
     condition: null
     expect: null

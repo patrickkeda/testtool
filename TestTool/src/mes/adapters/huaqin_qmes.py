@@ -169,6 +169,20 @@ class HuaqinQMESAdapter(MESAdapter):
                 continue
         return payload.decode("latin1", errors="ignore")
 
+    @staticmethod
+    def _normalize_mes_error_message(message: str) -> str:
+        """
+        规范化 MES 返回的非标准英文错误文案，便于产线快速理解。
+        """
+        text = str(message or "").strip()
+        if not text:
+            return text
+
+        compact = "".join(ch for ch in text.lower() if ch.isalnum())
+        if "notmatchwithdefinedindb" in compact:
+            return "与数据库定义值不匹配"
+        return text
+
     def _dll_call(self, fn_name: str, *args, info_len: int = 102400) -> Tuple[int, str]:
         if self._dll is None:
             return -1, "DLL未加载"
@@ -183,6 +197,7 @@ class HuaqinQMESAdapter(MESAdapter):
         parsed = self._parse_json_value(s_info)
         data = parsed if parsed is not None else {"raw": s_info}
         success, message, normalized_data = self._normalize_qmes_response(data)
+        message = self._normalize_mes_error_message(message)
         # DLL层返回0为函数调用成功；业务成功由 H_RET/code 判定
         final_success = (ret == 0) and success
         final_message = message or (f"{op_name}成功" if final_success else f"{op_name}失败")
@@ -357,7 +372,7 @@ class HuaqinQMESAdapter(MESAdapter):
         tools_version = self._value_by_port(config, "tools_version", port, "V1.0")
         tools = f"{tools_name}_{tools_version}"
         sn_type = str(self._value_by_port(config, "sn_type", port, "1") or "1")
-        fail_default = str(self._value_by_port(config, "failure_error_code", port, "1") or "1").strip() or "1"
+        fail_default = str(self._value_by_port(config, "failure_error_code", port, "error") or "error").strip() or "error"
         if test_result.overall_result.value == "PASS":
             error_code = "0"
         else:
@@ -403,7 +418,7 @@ class HuaqinQMESAdapter(MESAdapter):
         action_name = self._action_name_upload(config)
         tools_name = self._value(config, "tools_name", "TestTool")
         tools_version = self._value(config, "tools_version", "V1.0")
-        fail_default = str(self._value(config, "failure_error_code", "1")).strip() or "1"
+        fail_default = str(self._value(config, "failure_error_code", "error")).strip() or "error"
         if test_result.overall_result.value == "PASS":
             error_code = "0"
         else:
@@ -605,6 +620,7 @@ class HuaqinQMESAdapter(MESAdapter):
                         message = self._pick_first_non_empty(head, ("H_MSG",)) or ""
         if not message:
             message = self._pick_first_non_empty(body, ("msg", "message")) or "Success"
+        message = self._normalize_mes_error_message(message)
 
         if result_code is None:
             return True, message, info

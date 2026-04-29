@@ -197,14 +197,19 @@ class CANGUI:
                 self.status_label.config(text="状态: 连接失败", foreground="red")
                 self.log("设备连接失败", "ERROR")
                 self.log("提示：请检查：1)设备USB是否连接 2)驱动是否安装 3)设备索引是否正确", "ERROR")
+                detail_msg = getattr(self.sender, "last_error", "") if self.sender else ""
+                if detail_msg:
+                    self.log(f"底层错误: {detail_msg}", "ERROR")
                 self.sender = None
+                detail_block = f"\n\n底层错误信息：\n{detail_msg}" if detail_msg else ""
                 messagebox.showwarning("连接失败", 
                     "设备连接失败！\n\n请检查：\n"
                     "1. CAN设备USB是否已连接\n"
                     "2. 设备驱动是否已安装\n"
                     "3. 设备索引是否正确（如果连接了多个设备，尝试改为1、2等）\n"
                     "4. 设备类型是否正确（USBCAN1=3, USBCAN2=4, USBCANFD=6）\n\n"
-                    "建议：先用示例程序Ecantest测试设备是否能正常工作")
+                    "建议：先用示例程序Ecantest测试设备是否能正常工作"
+                    f"{detail_block}")
         except Exception as e:
             messagebox.showerror("错误", f"连接设备失败: {e}")
             self.log(f"连接设备失败: {e}", "ERROR")

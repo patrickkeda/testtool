@@ -29,6 +29,9 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QPlainTextEdit,
 )
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 from .port_panel import PortPanel
 from .config_dialog import ConfigDialog
@@ -289,6 +292,7 @@ class MainWindow(QMainWindow):
         self.lbl_comm.setAlignment(Qt.AlignCenter)
         self.lbl_mes.setAlignment(Qt.AlignCenter)
         self.lbl_log.setAlignment(Qt.AlignCenter)
+        self.lbl_mes.setStyleSheet("font-weight: 700; color: #b00020;")
         
         # Add small spacing before status labels
         toolbar.addWidget(self._create_spacer(10))
@@ -442,6 +446,70 @@ class MainWindow(QMainWindow):
         self.mes_label = QLabel("MES: 未连接")
         self.statusBar().addPermanentWidget(self.connection_label)
         self.statusBar().addPermanentWidget(self.mes_label)
+        self.mes_label.setStyleSheet("font-weight: 700; color: #b00020;")
+        self._start_mes_status_monitor()
+
+    def _start_mes_status_monitor(self) -> None:
+        """启动MES连接状态监控。"""
+        from PySide6.QtCore import QTimer
+
+        self._mes_status_timer = QTimer(self)
+        self._mes_status_timer.setInterval(5000)
+        self._mes_status_timer.timeout.connect(self._refresh_mes_status)
+        self._mes_status_timer.start()
+        self._refresh_mes_status()
+
+    def _set_mes_status_labels(self, connected: bool, detail: str = "") -> None:
+        if connected:
+            toolbar_text = "MES: ● 已连接"
+            bar_text = "MES: 已连接"
+            color = "#0a7f2e"
+        else:
+            toolbar_text = "MES: ● 未连接"
+            bar_text = "MES: 未连接"
+            color = "#b00020"
+
+        if detail:
+            bar_text = f"{bar_text} ({detail})"
+
+        self.lbl_mes.setText(toolbar_text)
+        self.mes_label.setText(bar_text)
+        self.lbl_mes.setStyleSheet(f"font-weight: 700; color: {color};")
+        self.mes_label.setStyleSheet(f"font-weight: 700; color: {color};")
+
+    def _check_mes_connectivity(self) -> tuple[bool, str]:
+        """检查MES基础连通性。"""
+        try:
+            config = self._config_service.load()
+            mes_cfg = getattr(config, "mes", None)
+            if not mes_cfg or not getattr(mes_cfg, "enabled", False):
+                return False, "未启用"
+
+            base_url = str(getattr(mes_cfg, "base_url", "") or "").strip()
+            if not base_url:
+                return False, "未配置URL"
+
+            parsed = urlparse(base_url)
+            if not parsed.scheme or not parsed.netloc:
+                return False, "URL非法"
+
+            req = Request(base_url, method="HEAD")
+            with urlopen(req, timeout=1.5) as response:
+                code = int(getattr(response, "status", 200))
+                return (code < 500), f"HTTP {code}"
+        except HTTPError as exc:
+            # 4xx通常代表服务可达但接口方法/路径不匹配，仍视为已连通
+            if 400 <= int(exc.code) < 500:
+                return True, f"HTTP {exc.code}"
+            return False, f"HTTP {exc.code}"
+        except URLError as exc:
+            return False, str(exc.reason or exc)
+        except Exception as exc:  # noqa: BLE001
+            return False, str(exc)
+
+    def _refresh_mes_status(self) -> None:
+        connected, detail = self._check_mes_connectivity()
+        self._set_mes_status_labels(connected, detail)
 
     def _init_logging_bridge(self) -> None:
         import logging
@@ -1917,6 +1985,7 @@ class MainWindow(QMainWindow):
             from .mes_config_dialog import MESConfigDialog
             dialog = MESConfigDialog(self, self._config_service)
             dialog.exec()
+            self._refresh_mes_status()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"无法打开MES配置对话框: {e}")
     

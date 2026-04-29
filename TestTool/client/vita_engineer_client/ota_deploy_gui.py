@@ -163,7 +163,6 @@ class DeployExecutor:
     def _exec_and_check(self, ssh, cmd, label="", log_fail=True):
         """执行远程命令，等待完成并返回 (exit_code, stdout_str, stderr_str)"""
         _, stdout, stderr = ssh.client.exec_command(cmd)
-        # 必须先读完输出，再获取退出码，否则大输出时会死锁
         out = stdout.read().decode("utf-8", errors="replace").strip()
         err = stderr.read().decode("utf-8", errors="replace").strip()
         exit_code = stdout.channel.recv_exit_status()
@@ -173,7 +172,6 @@ class DeployExecutor:
 
     def _start_tmux_session(self, ssh, session_name, inner_cmd, label):
         """安全启动 tmux 会话并校验是否成功。"""
-        # 清理同名旧会话，避免 name 冲突
         self._exec_and_check(ssh, f"tmux kill-session -t {session_name}", label, log_fail=False)
 
         rc, out, err = self._exec_and_check(ssh, f"tmux new-session -d -s {session_name}", label, log_fail=False)
@@ -196,7 +194,6 @@ class DeployExecutor:
                 self.log(f"[{label}] ⚠️ 无法确认 tmux 会话状态: {reason or '未知原因'}")
 
     def _build_s100_to_x5_auth(self, s100_ssh):
-        """构建 S100 侧 ssh 到 X5 的认证参数；必要时下发临时私钥。"""
         s100_x5_key_path = "/tmp/ota_x5_fetch_id"
         use_key = self.cfg.get("use_identity_file") and self.cfg.get("identity_file")
         identity_file_local = self.cfg.get("identity_file", "")
@@ -217,6 +214,17 @@ class DeployExecutor:
             "-o PreferredAuthentications=publickey,password,keyboard-interactive -o BatchMode=yes",
             ""
         )
+        
+    def _build_screen_cmds(self, ip):
+        """构建通过 HTTP 请求控制屏幕颜色的 curl 命令"""
+        base_cmd = f"curl -s -X POST 'http://{ip}:3579/command' -H 'Content-Type: application/json'"
+        # JSON 使用双引号，大括号在 f-string 中使用 {{ }} 转义
+        eng_cmd = f"{base_cmd} -d '{{\"command\":\"enfac=1,1%\",\"params\":{{\"op\":\"1\",\"en\":\"1\"}}}}'"
+        grn_cmd = f"{base_cmd} -d '{{\"command\":\"lcd=1,green%\",\"params\":{{\"op\":\"1\",\"color\":\"green\"}}}}'"
+        red_cmd = f"{base_cmd} -d '{{\"command\":\"lcd=1,red%\",\"params\":{{\"op\":\"1\",\"color\":\"red\"}}}}'"
+        
+        # 组装命令，确保先进入工程模式并缓冲 1 秒，再发送颜色指令
+        return f"{eng_cmd} >/dev/null 2>&1 && sleep 1", f"{grn_cmd} >/dev/null 2>&1", f"{red_cmd} >/dev/null 2>&1"
 
     def _do_sync_work(self, s100_ssh, x5_ssh):
         items = self.cfg.get("sync_items", [])
@@ -224,10 +232,12 @@ class DeployExecutor:
         done = 0
         for item in items:
             src, dst = item.get("src"), item.get("dst")
-            if not (src and dst and os.path.exists(src)): continue
+            if not (src and dst and os.path.exists(src)):
+                continue
             file_size = os.path.getsize(src)
             size_str = f"{file_size / 1024 / 1024:.1f}MB" if file_size > 1024 * 1024 else f"{file_size / 1024:.1f}KB"
             fname = os.path.basename(src)
+            make_exec = item.get("executable", False)
 
             if item.get("s100") and s100_ssh:
                 try:
@@ -236,8 +246,13 @@ class DeployExecutor:
                         self.log(f"[S100 Sync] ⚠️ mount 失败: {err}")
                     self.log(f"[S100 Sync] 上传 {fname} ({size_str}) → {dst}")
                     s100_ssh.upload_file(src, dst, progress_cb=self._make_progress_cb(f"S100 Sync", fname, file_size))
-                    # 验证远端文件
                     remote_path = dst + os.path.basename(src) if dst.endswith('/') else dst
+                    if make_exec:
+                        rc_chmod, _, err_chmod = self._exec_and_check(s100_ssh, f"chmod +x '{remote_path}'", "S100 Sync")
+                        if rc_chmod == 0:
+                            self.log(f"[S100 Sync] 已赋予可执行权限: {remote_path}")
+                        else:
+                            self.log(f"[S100 Sync] ⚠️ chmod +x 失败: {err_chmod}")
                     rc, out, _ = self._exec_and_check(s100_ssh, f"stat '{remote_path}' 2>&1", "S100 Sync")
                     if rc == 0:
                         self.log(f"[S100 Sync] ✅ {fname} 同步成功")
@@ -257,6 +272,12 @@ class DeployExecutor:
                     self.log(f"[X5 Sync] 上传 {fname} ({size_str}) → {dst}")
                     x5_ssh.upload_file(src, dst, progress_cb=self._make_progress_cb(f"X5 Sync", fname, file_size))
                     remote_path = dst + os.path.basename(src) if dst.endswith('/') else dst
+                    if make_exec:
+                        rc_chmod, _, err_chmod = self._exec_and_check(x5_ssh, f"chmod +x '{remote_path}'", "X5 Sync")
+                        if rc_chmod == 0:
+                            self.log(f"[X5 Sync] 已赋予可执行权限: {remote_path}")
+                        else:
+                            self.log(f"[X5 Sync] ⚠️ chmod +x 失败: {err_chmod}")
                     rc, out, _ = self._exec_and_check(x5_ssh, f"stat '{remote_path}' 2>&1", "X5 Sync")
                     if rc == 0:
                         self.log(f"[X5 Sync] ✅ {fname} 同步成功")
@@ -269,12 +290,10 @@ class DeployExecutor:
             self.log(f"--- 同步进度: {done}/{total} ---")
 
     def _make_progress_cb(self, label, filename, total_size):
-        """返回一个 sftp.put 进度回调，每 10% 打印一次"""
-        last_pct = [-1]  # mutable container for closure
+        last_pct = [-1]
         def _cb(transferred, total):
             if total == 0: return
             pct = int(transferred * 100 / total)
-            # 每 10% 报告一次，以及 100% 时报告
             step = (pct // 10) * 10
             if step > last_pct[0]:
                 last_pct[0] = step
@@ -285,7 +304,6 @@ class DeployExecutor:
 
     def _do_ota_work(self, s100_ssh, x5_ssh):
         targets = [("S100", s100_ssh, self.cfg.get("ota_target_s100")), ("X5", x5_ssh, self.cfg.get("ota_target_x5"))]
-        # 筛选出有效的目标
         valid_targets = []
         for label, ssh, enabled in targets:
             if not (enabled and ssh): continue
@@ -298,12 +316,11 @@ class DeployExecutor:
         if not valid_targets:
             return
 
-        # 上传阶段（串行，因为 X5 通过 S100 隧道，带宽共享）
         for label, ssh, app_p, sys_p in valid_targets:
             ota_dir = self.cfg["ota_dir"]
             self.log(f"[{label} OTA] 上传升级包...")
             _, mk_out, _ = ssh.client.exec_command(f"mount -o remount,rw /app && mkdir -p {ota_dir} && rm -rf {ota_dir}/*")
-            mk_out.channel.recv_exit_status()  # 等待目录准备完成
+            mk_out.channel.recv_exit_status()
             sftp = ssh.client.open_sftp()
             app_name = os.path.basename(app_p)
             sys_name = os.path.basename(sys_p)
@@ -312,29 +329,15 @@ class DeployExecutor:
             sftp.close()
             self.log(f"[{label} OTA] 上传完成。")
 
-        # 执行阶段
         if self.cfg["use_tmux"]:
-            # 先确认每个目标都具备 tmux，避免提交后无会话
             for label, ssh, _, _ in valid_targets:
                 rc, _, _ = self._exec_and_check(ssh, "command -v tmux >/dev/null 2>&1", f"{label} OTA", log_fail=False)
                 if rc != 0:
                     raise RuntimeError(f"[{label} OTA] 目标设备未安装 tmux，请安装 tmux 或关闭『Tmux 后台』后重试")
 
-            light_green_cmd = (
-                "source /app/script/env.sh && "
-                "ros2 service call /light_node/control peripheral_msgs/srv/LightControl "
-                "\"{target_state: 1, pre_check: false, mode: 3, red: 0, green: 255, blue: 0, brightness: 255, speed: 1.0, duration_ms: 0}\""
-            )
-            light_red_cmd = (
-                "source /app/script/env.sh && "
-                "ros2 service call /light_node/control peripheral_msgs/srv/LightControl "
-                "\"{target_state: 1, pre_check: false, mode: 3, red: 255, green: 0, blue: 0, brightness: 255, speed: 1.0, duration_ms: 0}\""
-            )
-
             target_map = {label: (ssh, app_p, sys_p) for label, ssh, app_p, sys_p in valid_targets}
 
             if "S100" in target_map and "X5" in target_map:
-                # 1) 先启动 X5：仅执行 OTA 并写结果
                 x5_ssh, x5_app_p, x5_sys_p = target_map["X5"]
                 x5_ota_cmd = (
                     f"cd {self.cfg['ota_dir']} && /usr/hobot/bin/ota_tool -n "
@@ -358,7 +361,6 @@ class DeployExecutor:
                 self.log(f"[X5 OTA] 可后续查询结果文件: {x5_result_file}")
                 self.log(f"[X5 OTA] 可后续查询日志文件: {x5_log_file}")
 
-                # 2) 启动 S100：执行自身 OTA，并通过 SSH 读取 X5 结果后统一控灯
                 s100_ssh, s100_app_p, s100_sys_p = target_map["S100"]
                 s100_ota_cmd = (
                     f"cd {self.cfg['ota_dir']} && /usr/hobot/bin/ota_tool -n "
@@ -378,6 +380,10 @@ class DeployExecutor:
                     f"ssh -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
                     f"-o ConnectTimeout=3 {x5_ssh_auth} root@{self.cfg['x5_ip']} \"cat /tmp/ota_x5.result 2>/dev/null\""
                 )
+                
+                # 双端升级，S100负责汇总，IP使用 localhost
+                eng_cmd, grn_cmd, red_cmd = self._build_screen_cmds("localhost")
+
                 s100_inner_cmd = (
                     f"{s100_ota_cmd} > '{s100_log_file}' 2>&1; "
                     f"s100_rc=$?; "
@@ -394,11 +400,11 @@ class DeployExecutor:
                     f"echo x5_rc=$x5_rc >> '{merge_detail_file}'; "
                     f"echo x5_fetch_status=$x5_fetch_status >> '{merge_detail_file}'; "
                     f"if [ \"$s100_rc\" = \"0\" ] && [ \"$x5_rc\" = \"0\" ]; then "
-                    f"echo light=green >> '{merge_detail_file}'; "
-                    f"{light_green_cmd}; "
+                    f"echo screen=green >> '{merge_detail_file}'; "
+                    f"{eng_cmd}; {grn_cmd}; "
                     f"else "
-                    f"echo light=red >> '{merge_detail_file}'; "
-                    f"{light_red_cmd}; "
+                    f"echo screen=red >> '{merge_detail_file}'; "
+                    f"{eng_cmd}; {red_cmd}; "
                     f"fi; "
                     f"{cleanup_key_cmd}"
                     f"rm -rf {self.cfg['ota_dir']}/*; "
@@ -409,10 +415,9 @@ class DeployExecutor:
                 self.log(f"[S100 OTA] 可后续查询结果文件: {s100_result_file}")
                 self.log(f"[S100 OTA] 可后续查询日志文件: {s100_log_file}")
                 self.log(f"[S100 OTA] 可后续查询汇总详情: {merge_detail_file}")
-                self.log("[S100 OTA] 将负责汇总 S100+X5 结果并触发灯光提示")
+                self.log("[S100 OTA] 将负责汇总 S100+X5 结果并触发屏幕颜色提示")
 
             else:
-                # 仅单平台升级：由该平台自检并控灯
                 label, ssh, app_p, sys_p = valid_targets[0]
                 ota_dir = self.cfg["ota_dir"]
                 cmd = f"cd {ota_dir} && /usr/hobot/bin/ota_tool -n -p {os.path.basename(app_p)} -p {os.path.basename(sys_p)}"
@@ -421,12 +426,21 @@ class DeployExecutor:
                 log_file = f"/tmp/{session_name}.log"
                 self._exec_and_check(ssh, f"rm -f '{result_file}'", f"{label} OTA", log_fail=False)
                 self._exec_and_check(ssh, f"rm -f '{log_file}'", f"{label} OTA", log_fail=False)
+                
+                # 单端升级判断对应 IP：若是 S100 本机调用则用 localhost，若是 X5 则用指定 IP
+                api_ip = "localhost" if label == "S100" else "192.168.127.2"
+                eng_cmd, grn_cmd, red_cmd = self._build_screen_cmds(api_ip)
+
                 tmux_inner_cmd = (
                     f"{cmd} > '{log_file}' 2>&1; "
                     f"ota_rc=$?; "
                     f"echo $ota_rc > '{result_file}'; "
                     f"echo ota_rc=$ota_rc >> '{log_file}'; "
-                    f"if [ \"$ota_rc\" = \"0\" ]; then {light_green_cmd}; else {light_red_cmd}; fi; "
+                    f"if [ \"$ota_rc\" = \"0\" ]; then "
+                    f"echo screen=green >> '{log_file}'; {eng_cmd}; {grn_cmd}; "
+                    f"else "
+                    f"echo screen=red >> '{log_file}'; {eng_cmd}; {red_cmd}; "
+                    f"fi; "
                     f"rm -rf {ota_dir}/*; "
                     f"echo tmux_done_ota_rc=$ota_rc >> '{log_file}'"
                 )
@@ -434,12 +448,12 @@ class DeployExecutor:
                 self.log(f"[{label} OTA] 已在 tmux 后台启动 (session: {session_name})")
                 self.log(f"[{label} OTA] 可后续查询结果文件: {result_file}")
                 self.log(f"[{label} OTA] 可后续查询日志文件: {log_file}")
+                self.log(f"[{label} OTA] 将在执行完成后触发屏幕颜色提示")
 
             self.log("✅ tmux 任务已全部提交，当前连接可断开，不影响后台升级。")
             self.log("ℹ️ 后续可 SSH 登录执行: tmux ls / tmux attach -t ota_s100|ota_x5 / cat /tmp/ota_*.result")
             return
         else:
-            # 非 Tmux 模式：并行执行，实时显示输出
             threads = []
             for label, ssh, app_p, sys_p in valid_targets:
                 t = threading.Thread(target=self._ota_exec_and_monitor, args=(label, ssh, app_p, sys_p), daemon=True)
@@ -454,7 +468,6 @@ class DeployExecutor:
                 t.join()
 
     def _ota_exec_and_monitor(self, label, ssh, app_p, sys_p):
-        """在独立线程中执行 OTA 并实时读取输出"""
         ota_dir = self.cfg["ota_dir"]
         cmd = f"cd {ota_dir} && /usr/hobot/bin/ota_tool -n -p {os.path.basename(app_p)} -p {os.path.basename(sys_p)}"
         try:
@@ -494,11 +507,9 @@ class OTADeployGUI:
         self._load_fields()
 
     def _build_ui(self):
-        # 使用一个主容器承载所有内容
         container = tk.Frame(self.root, bg=self.bg, padx=15, pady=5)
         container.pack(fill=tk.BOTH, expand=True)
 
-        # --- 1. SSH 配置 ---
         f_ssh = tk.LabelFrame(container, text=" 1. 基础连接凭据 ", bg=self.bg, padx=10, pady=5)
         f_ssh.pack(fill=tk.X, pady=2)
         r1 = tk.Frame(f_ssh, bg=self.bg); r1.pack(fill=tk.X)
@@ -510,7 +521,6 @@ class OTADeployGUI:
         self.key_path = tk.Entry(r2, width=45, bg="white"); self.key_path.pack(side=tk.LEFT, padx=5)
         tk.Button(r2, text="选择私钥", command=self._browse_key).pack(side=tk.LEFT)
 
-        # --- 2. OTA 功能 ---
         f_ota = tk.LabelFrame(container, text=" 2. OTA 升级功能 ", bg="#e8f4f8", padx=10, pady=5)
         f_ota.pack(fill=tk.X, pady=5)
         r_o_t = tk.Frame(f_ota, bg="#e8f4f8"); r_o_t.pack(fill=tk.X, pady=2)
@@ -529,16 +539,17 @@ class OTADeployGUI:
         self.ota_btn = tk.Button(f_ota, text="🚀 执行 OTA 升级", bg="#007aff", font=("Arial", 10, "bold"), command=lambda: self._start("ota"))
         self.ota_btn.pack(pady=5)
 
-        # --- 3. 同步功能 ---
         f_sync = tk.LabelFrame(container, text=" 3. 快速文件同步 ", bg="#eef9f0", padx=10, pady=5)
         f_sync.pack(fill=tk.X, pady=5)
         cv_f = tk.Frame(f_sync, bg="white")
         cv_f.pack(fill=tk.X)
-        self.canvas = tk.Canvas(cv_f, bg="white", height=150, highlightthickness=0)
+        # 增大canvas宽度，防止内容被裁剪
+        canvas_width = 1200
+        self.canvas = tk.Canvas(cv_f, bg="white", height=150, highlightthickness=0, width=canvas_width)
         self.scrollbar = ttk.Scrollbar(cv_f, orient="vertical", command=self.canvas.yview)
         self.scroll_f = tk.Frame(self.canvas, bg="white")
         self.scroll_f.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.create_window((0, 0), window=self.scroll_f, anchor="nw", width=1000)
+        self.canvas.create_window((0, 0), window=self.scroll_f, anchor="nw", width=canvas_width)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
@@ -547,7 +558,6 @@ class OTADeployGUI:
         self.sync_btn = tk.Button(rsb, text="📁 执行文件同步", bg="#34c759", font=("Arial", 10, "bold"), command=lambda: self._start("sync"))
         self.sync_btn.pack(side=tk.RIGHT)
 
-        # --- 4. 配置管理工具栏 (放在日志上方) ---
         f_config_ctrl = tk.Frame(container, bg="#eeeeee", padx=10, pady=8)
         f_config_ctrl.pack(fill=tk.X, pady=(10, 0))
         
@@ -556,24 +566,26 @@ class OTADeployGUI:
         tk.Button(f_config_ctrl, text="清理日志框", command=lambda: self.log_area.delete(1.0, tk.END), width=12).pack(side=tk.RIGHT)
         tk.Label(f_config_ctrl, text="配置自动保存在 ~/.ota_deploy_config.json", bg="#eeeeee", fg="gray").pack(side=tk.RIGHT, padx=10)
 
-        # --- 5. 日志区域 ---
         tk.Label(container, text="执行日志:", bg=self.bg).pack(anchor="w", pady=(5,0))
         self.log_area = scrolledtext.ScrolledText(container, height=12, bg="#1e1e1e", fg="#00ff00", font=("Menlo", 11))
         self.log_area.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
 
-    def add_sync_row(self, src="", dst="", s100=True, x5=False):
-        f = tk.Frame(self.scroll_f, bg="white", pady=2)
+    def add_sync_row(self, src="", dst="", s100=True, x5=False, executable=False):
+        f = tk.Frame(self.scroll_f, bg="white", pady=1)
         f.pack(fill=tk.X)
         sv, dv = tk.StringVar(value=src), tk.StringVar(value=dst)
         s100v, x5v = tk.BooleanVar(value=s100), tk.BooleanVar(value=x5)
-        tk.Entry(f, textvariable=sv, width=40).pack(side=tk.LEFT, padx=2)
-        tk.Button(f, text="..", width=2, command=lambda: self._browse_sync_file(sv)).pack(side=tk.LEFT)
-        tk.Label(f, text="➔", bg="white").pack(side=tk.LEFT, padx=5)
-        tk.Entry(f, textvariable=dv, width=40).pack(side=tk.LEFT, padx=2)
-        tk.Checkbutton(f, text="S100", variable=s100v, bg="white").pack(side=tk.LEFT, padx=2)
-        tk.Checkbutton(f, text="X5", variable=x5v, bg="white").pack(side=tk.LEFT, padx=2)
-        obj = {"frame": f, "src": sv, "dst": dv, "s100": s100v, "x5": x5v}
-        tk.Button(f, text="✖", fg="red", command=lambda: [f.destroy(), self.sync_rows.remove(obj)]).pack(side=tk.RIGHT, padx=5)
+        execv = tk.BooleanVar(value=executable)
+        tk.Entry(f, textvariable=sv, width=40).pack(side=tk.LEFT, padx=1)
+        tk.Button(f, text="..", width=2, command=lambda: self._browse_sync_file(sv)).pack(side=tk.LEFT, padx=1)
+        tk.Label(f, text="➔", bg="white").pack(side=tk.LEFT, padx=2)
+        tk.Entry(f, textvariable=dv, width=40).pack(side=tk.LEFT, padx=1)
+        tk.Checkbutton(f, text="S100", variable=s100v, bg="white").pack(side=tk.LEFT, padx=1)
+        tk.Checkbutton(f, text="X5", variable=x5v, bg="white").pack(side=tk.LEFT, padx=1)
+        # 直接放置可执行Checkbutton，设置合适宽度，减少padding，避免被裁剪
+        tk.Checkbutton(f, text="可执行", variable=execv, bg="white", anchor="w", width=7).pack(side=tk.LEFT, padx=1)
+        obj = {"frame": f, "src": sv, "dst": dv, "s100": s100v, "x5": x5v, "executable": execv}
+        tk.Button(f, text="✖", fg="red", command=lambda: [f.destroy(), self.sync_rows.remove(obj)]).pack(side=tk.RIGHT, padx=3)
         self.sync_rows.append(obj)
 
     def _start(self, mode):
@@ -590,7 +602,13 @@ class OTADeployGUI:
         threading.Thread(target=lambda: [DeployExecutor(cfg, self._log)._run_task(mode), self.root.after(0, lambda: [self.ota_btn.config(state=tk.NORMAL), self.sync_btn.config(state=tk.NORMAL)])], daemon=True).start()
 
     def _get_ui_cfg(self):
-        sync_items = [{"src": r["src"].get(), "dst": r["dst"].get(), "s100": r["s100"].get(), "x5": r["x5"].get()} for r in self.sync_rows]
+        sync_items = [{
+            "src": r["src"].get(),
+            "dst": r["dst"].get(),
+            "s100": r["s100"].get(),
+            "x5": r["x5"].get(),
+            "executable": r["executable"].get()
+        } for r in self.sync_rows]
         return {
             "s100_ip": self.s100_ip.get(), "x5_ip": self.x5_ip.get(), "username": "root", "password": "root",
             "ota_dir": self.cfg["ota_dir"], "connect_timeout": 5, "use_identity_file": self.use_key.get(),
@@ -630,7 +648,6 @@ class OTADeployGUI:
         if f: v.set(f)
 
     def _load_fields(self):
-        # 清空
         for e in [self.s100_ip, self.x5_ip, self.key_path]: e.delete(0, tk.END)
         self.s100_ip.insert(0, self.cfg.get("s100_ip", "")); self.x5_ip.insert(0, self.cfg.get("x5_ip", ""))
         self.use_key.set(self.cfg.get("use_identity_file", False)); self.key_path.insert(0, self.cfg.get("identity_file", ""))
@@ -639,8 +656,16 @@ class OTADeployGUI:
         self.use_tmux.set(self.cfg.get("use_tmux", True))
         for r in self.sync_rows: r["frame"].destroy()
         self.sync_rows = []
-        for item in self.cfg.get("sync_items", []): self.add_sync_row(item["src"], item["dst"], item["s100"], item["x5"])
-        if not self.sync_rows: self.add_sync_row()
+        for item in self.cfg.get("sync_items", []):
+            self.add_sync_row(
+                item.get("src", ""),
+                item.get("dst", ""),
+                item.get("s100", True),
+                item.get("x5", False),
+                item.get("executable", False)
+            )
+        if not self.sync_rows:
+            self.add_sync_row()
         self._on_key_toggle()
 
 if __name__ == "__main__":

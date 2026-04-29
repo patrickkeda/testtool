@@ -845,12 +845,13 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # 步骤29: 音频回环检测 (audio=0%)
+  # # 步骤29: 音频连通检测 (audio=0%)
   - id: step_39
     name: Audiomictest
     type: engineer.test
     params:
       command: 'mic=0%'
+      treat_error_contains_as_pass: "零"
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30

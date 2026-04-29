@@ -117,6 +117,22 @@ if (Test-Path $workPath) {
 
 Write-Host ""
 Write-Host "[4/4] Starting packaging..." -ForegroundColor Green
+
+# Check whether CAN DLLs are ready for packaging.
+# Recommended location: build\can_dll\ECanVci64.dll and/or ECANFDVCI64.dll
+$canDllDir = Join-Path $projectRoot "build\can_dll"
+$canDll1 = Join-Path $canDllDir "ECanVci64.dll"
+$canDll2 = Join-Path $canDllDir "ECANFDVCI64.dll"
+$canDll3 = Join-Path $canDllDir "CHUSBDLL64.dll"
+$hasCanDll = (Test-Path $canDll1) -or (Test-Path $canDll2) -or (Test-Path $canDll3)
+if ($hasCanDll) {
+    Write-Host "[INFO] CAN DLL detected and will be packaged into _internal\test\canapp" -ForegroundColor Green
+} else {
+    Write-Host "[WARNING] CAN DLL not found in build\can_dll" -ForegroundColor Yellow
+    Write-Host "          If target PC has no driver runtime, CAN connect may fail." -ForegroundColor Yellow
+    Write-Host "          Put ECanVci64.dll / ECANFDVCI64.dll / CHUSBDLL64.dll into build\can_dll and rebuild." -ForegroundColor Yellow
+}
+
 Set-Location (Join-Path $projectRoot "build")
 $env:TESTTOOL_OUTPUT_NAME = $outputName
 python -m PyInstaller TestTool.spec --clean --noconfirm --distpath $distPath --workpath $workPath
@@ -137,6 +153,9 @@ if (Test-Path $distExe) {
     $configPath = Join-Path $projectRoot ("dist\{0}\_internal\Config" -f $outputName)
     $seqPath = Join-Path $projectRoot ("dist\{0}\_internal\Seq" -f $outputName)
     $clientPath = Join-Path $projectRoot ("dist\{0}\_internal\client" -f $outputName)
+    $canDllPath1 = Join-Path $projectRoot ("dist\{0}\_internal\test\canapp\ECanVci64.dll" -f $outputName)
+    $canDllPath2 = Join-Path $projectRoot ("dist\{0}\_internal\test\canapp\ECANFDVCI64.dll" -f $outputName)
+    $canDllPath3 = Join-Path $projectRoot ("dist\{0}\_internal\test\canapp\CHUSBDLL64.dll" -f $outputName)
     if (Test-Path $configPath) {
         Write-Host "[OK] Config directory is included" -ForegroundColor Green
     } else {
@@ -151,6 +170,11 @@ if (Test-Path $distExe) {
         Write-Host "[OK] client directory is included" -ForegroundColor Green
     } else {
         Write-Host "[WARNING] client directory was not found" -ForegroundColor Yellow
+    }
+    if ((Test-Path $canDllPath1) -or (Test-Path $canDllPath2) -or (Test-Path $canDllPath3)) {
+        Write-Host "[OK] CAN DLL is included" -ForegroundColor Green
+    } else {
+        Write-Host "[WARNING] CAN DLL was not found in packaged output" -ForegroundColor Yellow
     }
 }
 

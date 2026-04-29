@@ -1,0 +1,44 @@
+rosbag2_bagfile_information:
+  version: 5
+  storage_identifier: mcap
+  duration:
+    nanoseconds: 7996555425
+  starting_time:
+    nanoseconds_since_epoch: 1777361013921630625
+  message_count: 2672
+  topics_with_message_count:
+    - topic_metadata:
+        name: /imu_raw_x5
+        type: sensor_msgs/msg/Imu
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 645
+    - topic_metadata:
+        name: /imu_raw
+        type: sensor_msgs/msg/Imu
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 814
+    - topic_metadata:
+        name: /lidar_imu
+        type: sensor_msgs/msg/Imu
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 1213
+    - topic_metadata:
+        name: /lidar_points
+        type: sensor_msgs/msg/PointCloud2
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 0
+  compression_format: ""
+  compression_mode: ""
+  relative_file_paths:
+    - 20260428_152333_multisensor_0.mcap
+  files:
+    - path: 20260428_152333_multisensor_0.mcap
+      starting_time:
+        nanoseconds_since_epoch: 1777361013921630625
+      duration:
+        nanoseconds: 7996555425
+      message_count: 2672

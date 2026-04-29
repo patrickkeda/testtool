@@ -193,16 +193,25 @@ class CreateDeviceJsonStep(BaseStep):
             ctx.log_info(f"提取的 IMEI: imei={imei}")
             
             # 6) 构建 JSON 数据
+            if len(sn) < 7:
+                return self.create_failure_result(
+                    f"SN长度不足，无法按规则生成name: {sn}",
+                    error="SN长度必须至少为7位"
+                )
+
+            # name 规则: 大头(pvt) + SN第7位 + SN后7位
+            alias_name = f"大头{sn[6]}{sn[-7:]}"
+
             device_data = [
                 {
                     "snNumber": sn,
                     "imeiNumber": imei,
-                    "name": f"pvt{sn}",
+                    "name": f"pvt{sn[6]}{sn[-7:]}",
                     "parentId": "vbotPVTsample",
                     "deviceType": "direct",
-                    "alias": f"vita-pvt-{sn}",
-                    "factoryDownloadVersion": "V0.6.15-1~20260417030900",
-                    "factoryInstallVersion": "V0.6.15-1~20260417030900",
+                    "alias": alias_name,
+                    "factoryDownloadVersion": "V1.0.0~20260426173150",
+                    "factoryInstallVersion": "V1.0.0~20260426173150",
                     "description": f"Vita robot pvt no.{sn}",
                     "status": "1",
                     "linkStatus": "offline"

@@ -18,11 +18,6 @@
           "enabled": true
         },
         {
-          "description": "站立",
-          "test_case": "action_mode=1,stand%",
-          "enabled": true
-        },
-        {
           "description": "趴下",
           "test_case": "action_mode=1,laydown%",
           "enabled": true
@@ -94,22 +89,29 @@
       ]
     },
     {
+      "command": "sensorcal",
+      "description": "舵机控制测试",
+      "test_cases": [
+        {
+          "description": "解锁舵机",
+          "test_case": "sensorcal=0%",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "command": "motor_id",
+      "description": "配置电机ID",
+      "test_case": "motor_id=1%",
+      "enabled": true
+    },
+    {
       "command": "servo",
       "description": "舵机控制测试",
       "test_cases": [
         {
           "description": "获取舵机ID配置",
           "test_case": "servo=0%",
-          "enabled": true
-        },
-        {
-          "description": "控制yaw舵机到30度",
-          "test_case": "servo=1,2,30%",
-          "enabled": true
-        },
-        {
-          "description": "控制yaw舵机到-30度",
-          "test_case": "servo=1,2,-30%",
           "enabled": true
         },
         {
@@ -226,11 +228,6 @@
           "enabled": true
         },
         {
-          "description": "打开绿色耳灯",
-          "test_case": "light=1,g%",
-          "enabled": true
-        },
-        {
           "description": "打开蓝色耳灯",
           "test_case": "light=1,b%",
           "enabled": true
@@ -242,11 +239,6 @@
       "description": "LCD屏幕控制测试",
       "test_cases": [
         {
-          "description": "打开LCD显示白色",
-          "test_case": "lcd=1,white%",
-          "enabled": true
-        },
-        {
           "description": "打开LCD显示黑色",
           "test_case": "lcd=1,black%",
           "enabled": true
@@ -254,16 +246,6 @@
         {
           "description": "打开LCD显示红色",
           "test_case": "lcd=1,red%",
-          "enabled": true
-        },
-        {
-          "description": "打开LCD显示绿色",
-          "test_case": "lcd=1,green%",
-          "enabled": true
-        },
-        {
-          "description": "打开LCD显示蓝色",
-          "test_case": "lcd=1,blue%",
           "enabled": true
         },
         {
@@ -360,12 +342,6 @@
       "enabled": true
     },
     {
-      "command": "mic",
-      "description": "音频回环测试（喇叭+参考电路+4Mic）",
-      "test_case": "mic=1%",
-      "enabled": true
-    },
-    {
       "command": "bt",
       "description": "获取蓝牙状态信息",
       "test_case": "bt=0%",
@@ -394,33 +370,6 @@
         {
           "description": "查询整机 EFUSE PN",
           "test_case": "efuse=0,sn%",
-          "enabled": true
-        }
-      ]
-    },
-    {
-      "command": "sensorcal",
-      "description": "舵机控制测试",
-      "test_cases": [
-        {
-          "description": "解锁舵机",
-          "test_case": "sensorcal=0%",
-          "enabled": true
-        }
-      ]
-    },
-    {
-      "command": "systemctl",
-      "description": "在板端执行 systemctl 控制（谨慎）",
-      "test_cases": [
-        {
-          "description": "停止 lowlevel_service",
-          "test_case": "systemctl=stop,lowlevel_service%",
-          "enabled": true
-        },
-        {
-          "description": "启动 lowlevel_service",
-          "test_case": "systemctl=start,lowlevel_service%",
           "enabled": true
         }
       ]
@@ -491,7 +440,7 @@
         "command": "enfac",
         "description": "退出工程模式",
         "test_case": "enfac=1,0%",
-        "enabled": true
+        "enabled": false
       }
     ]
   }

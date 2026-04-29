@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QLabel,
     QMessageBox,
+    QInputDialog,
 )
 from PySide6.QtGui import QFont
 
@@ -220,7 +221,7 @@ class MESConfigDialog(QDialog):
         auth_layout.addRow("SNType:", self.sn_type_edit)
 
         self.failure_error_code_edit = QLineEdit(widget)
-        self.failure_error_code_edit.setPlaceholderText("失败默认 ErrorCode，默认 1")
+        self.failure_error_code_edit.setPlaceholderText("失败默认 ErrorCode，默认 error")
         auth_layout.addRow("失败ErrorCode:", self.failure_error_code_edit)
 
         # QMES ExtInfo
@@ -397,7 +398,7 @@ class MESConfigDialog(QDialog):
                     self.tools_name_edit.setText(getattr(mes_config.credentials, 'tools_name', ''))
                     self.tools_version_edit.setText(getattr(mes_config.credentials, 'tools_version', ''))
                     self.sn_type_edit.setText(str(getattr(mes_config.credentials, 'sn_type', '1')))
-                    self.failure_error_code_edit.setText(str(getattr(mes_config.credentials, 'failure_error_code', '1')))
+                    self.failure_error_code_edit.setText(str(getattr(mes_config.credentials, 'failure_error_code', 'error')))
                     ext_info = getattr(mes_config.credentials, 'ext_info', {})
                     try:
                         ext_info_text = json.dumps(ext_info or {}, ensure_ascii=False)
@@ -499,7 +500,7 @@ class MESConfigDialog(QDialog):
             tools_name=self.tools_name_edit.text().strip() or "TestTool",
             tools_version=self.tools_version_edit.text().strip() or "V1.0",
             sn_type=self.sn_type_edit.text().strip() or "1",
-            failure_error_code=self.failure_error_code_edit.text().strip() or "1",
+            failure_error_code=self.failure_error_code_edit.text().strip() or "error",
             ext_info=ext_info,
         )
         
@@ -558,6 +559,19 @@ class MESConfigDialog(QDialog):
                 
             if not mes_config.station_id:
                 QMessageBox.warning(self, "验证失败", "工位ID不能为空")
+                return
+
+            # MES配置修改保护：保存前需要输入密码
+            ok, password = QInputDialog.getText(
+                self,
+                "MES配置确认",
+                "请输入修改密码:",
+                QLineEdit.Password,
+            )
+            if not ok:
+                return
+            if (password or "").strip() != "huaqinte":
+                QMessageBox.warning(self, "验证失败", "修改密码错误，MES配置未保存")
                 return
                 
             # 保存配置
@@ -635,6 +649,7 @@ class MESConfigDialog(QDialog):
         _set_text_if_needed(self.tools_name_edit, "TestTool")
         _set_text_if_needed(self.tools_version_edit, "V1.0")
         _set_text_if_needed(self.sn_type_edit, "1")
+        _set_text_if_needed(self.failure_error_code_edit, "error")
         _set_text_if_needed(self.ext_info_edit, "{}")
 
         _set_text_if_needed(self.auth_endpoint_edit, "/mes/init")

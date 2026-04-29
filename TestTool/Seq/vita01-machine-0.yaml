@@ -330,23 +330,23 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 14: 
-  - id: step_14
-    name: WakeUpHead
-    type: engineer.test
-    params:
-      command: 'tts=2%'
-      robot_ip: '${robot_ip}'
-      port: ${robot_port}
-      timeout: 30
-    timeout: 35000
-    retries: 1
-    condition: null
-    expect: null
-    on_failure: fail
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
+  # # Step 14: 
+  # - id: step_14
+  #   name: WakeUpHead
+  #   type: engineer.test
+  #   params:
+  #     command: 'tts=2%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
 
   # # Step 21: 唤醒大头 - 播放大头大头音频
   # - id: step_21
@@ -402,7 +402,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 17: 唤醒大头 - 播放大头大头音频
+  # Step 17: 打开补光灯
   - id: step_17
     name: WakeUpHead
     type: engineer.test
@@ -549,6 +549,21 @@ steps:
       timeout: 30
     timeout: 35000
     retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 5: 延时 100 秒
+  - id: step_5
+    name: DelayAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 25000
+    timeout: 25500
+    retries: 0
     condition: null
     expect: null
     on_failure: fail
