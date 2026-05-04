@@ -35,17 +35,28 @@ ENV/
 .DS_Store
 
 # TestTool specific
-# 日志文件
+# 日志文件（Result 整目录已忽略；此处保留通配便于其它路径）
 *.log
-TestTool/Result/Log/**/*.log
-TestTool/Result/TestResult/**/*.log
-
-# 测试结果数据
-TestTool/Result/motor/*.csv
-TestTool/Result/TestResult/**/*.csv
 
 # 配置文件中的敏感信息（可选，根据实际情况调整）
 # TestTool/Config/config.yaml
+
+# ---------------------------------------------------------------------------
+# 运行产物与打包输出 — 不提交（本地/流水线生成；减小仓库体积）
+# ---------------------------------------------------------------------------
+# 测试与标定等输出：ZPL 预览、上传 JSON、红外图、标定 mcap/pcd 等
+# 例外：字体/矢量资源需随仓库分发时保留（可日后迁到 assets/ 再去掉例外）
+TestTool/Result/**
+!TestTool/Result/font_sources/
+!TestTool/Result/font_sources/**
+
+# 工作目录错误时产生的嵌套副本（如 Result 写在 TestTool 子目录下）
+TestTool/TestTool/
+
+# PyInstaller 构建目录与中间产物（保留 build/*.spec、build.ps1、文档等）
+TestTool/build/pyinstaller/
+TestTool/build/TestTool/
+TestTool/build/TestTool_Package_build/
 
 # 编译文件
 *.pyc
@@ -86,7 +97,3 @@ TestTool/client/bin/*
 *.zip
 *.7z
 *.tar.gz
-
-# 输出目录（可选，根据需求决定是否提交）
-# TestTool/Result/
-
