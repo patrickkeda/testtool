@@ -26,6 +26,11 @@
           "description": "停止",
           "test_case": "action_mode=2%",
           "enabled": true
+        },
+        {
+          "description": "四足稳定性检测(body)",
+          "test_case": "action_mode=1,body_stable%",
+          "enabled": true
         }
       ]
     },
@@ -334,6 +339,13 @@
       "description": "上传设备信息文件",
       "test_case": "upload=1%",
       "enabled": true
+    },
+    {
+      "command": "scramble",
+      "description": "根据SN和IMEI获取扰码",
+      "test_case": "scramble=0,0000000000000000225,98604631521D0119776%",
+      "enabled": false,
+      "note": "请替换为当前设备的真实SN和IMEI"
     },
     {
       "command": "mic",

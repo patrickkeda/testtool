@@ -102,6 +102,10 @@ datas = [
     (str(project_root / 'client'), 'client'),
     (str(project_root / 'test' / 'canapp'), 'test/canapp'),
 ]
+if (project_root / 'bin').is_dir():
+    datas.append((str(project_root / 'bin'), 'bin'))
+if (project_root / 'Result' / 'font_sources').is_dir():
+    datas.append((str(project_root / 'Result' / 'font_sources'), 'Result/font_sources'))
 if (project_root / 'test' / 'dogleg').is_dir():
     datas.append((str(project_root / 'test' / 'dogleg'), 'test/dogleg'))
 if (project_root / 'examples').is_dir():

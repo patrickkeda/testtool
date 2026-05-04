@@ -1,0 +1,26 @@
+rosbag2_bagfile_information:
+  version: 5
+  storage_identifier: mcap
+  duration:
+    nanoseconds: 19199593675
+  starting_time:
+    nanoseconds_since_epoch: 1777528099422922725
+  message_count: 401
+  topics_with_message_count:
+    - topic_metadata:
+        name: /uwb/data
+        type: uwb_location/msg/UWB
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 401
+  compression_format: ""
+  compression_mode: ""
+  relative_file_paths:
+    - 20260430_134817_uwb_0.mcap
+  files:
+    - path: 20260430_134817_uwb_0.mcap
+      starting_time:
+        nanoseconds_since_epoch: 1777528099422922725
+      duration:
+        nanoseconds: 19199593675
+      message_count: 401

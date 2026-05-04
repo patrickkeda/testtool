@@ -416,6 +416,18 @@ class EngineerTestStep(BaseStep):
                         result_data["raw_response"] = json_response[:500]  # 只存储前500字符
                 
                 if result:
+                    # 将常用字段同步到上下文，便于后续步骤直接使用 ${imei}/${scramble} 等变量
+                    # 说明：历史逻辑仅保存 step_x_result，未把字段写入 ctx，导致变量替换失败。
+                    imei_value = result_data.get("imei") or result_data.get("imeiNumber")
+                    if imei_value:
+                        ctx.set_data("imei", imei_value)
+                        ctx.log_info(f"已写入上下文变量 imei={imei_value}")
+
+                    scramble_value = result_data.get("scramble")
+                    if scramble_value:
+                        ctx.set_data("scramble", scramble_value)
+                        ctx.log_info(f"已写入上下文变量 scramble={scramble_value}")
+
                     return StepResult(
                         passed=True,
                         message=f"工程测试通过: {test_arg}",

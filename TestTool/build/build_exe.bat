@@ -39,7 +39,17 @@ echo.
 echo Running PowerShell build script...
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0build.ps1"
+echo Select package mode:
+echo   [1] Full package
+echo   [2] Incremental package (compare latest package library, output changed files only)
+choice /C 12 /M "Choose mode"
+set "PACKAGE_MODE=full"
+if errorlevel 2 set "PACKAGE_MODE=incremental"
+
+echo.
+echo Selected mode: %PACKAGE_MODE%
+echo.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0build.ps1" -PackageMode %PACKAGE_MODE%
 set "BUILD_RESULT=%ERRORLEVEL%"
 
 echo.

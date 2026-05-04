@@ -171,6 +171,10 @@ class CreateDeviceJsonStep(BaseStep):
                 # 使用默认值
                 imei = "UNKNOWN"
 
+            # 将 imei 写入上下文全局变量，供后续步骤通过 ${context.imei} 引用
+            ctx.set_data("imei", imei)
+            ctx.log_info(f"已写入上下文变量 context.imei={imei}")
+
             # #region agent log
             try:
                 with open(r"d:\b2test\TestTool-v0.4\.cursor\debug.log", "a", encoding="utf-8") as _f:
@@ -210,8 +214,8 @@ class CreateDeviceJsonStep(BaseStep):
                     "parentId": "vbotPVTsample",
                     "deviceType": "direct",
                     "alias": alias_name,
-                    "factoryDownloadVersion": "V1.0.0~20260426173150",
-                    "factoryInstallVersion": "V1.0.0~20260426173150",
+                    "factoryDownloadVersion": "V1.0.0~20260429022512",
+                    "factoryInstallVersion": "V1.0.0~20260429022512",
                     "description": f"Vita robot pvt no.{sn}",
                     "status": "1",
                     "linkStatus": "offline"

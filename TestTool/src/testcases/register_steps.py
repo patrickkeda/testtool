@@ -44,7 +44,7 @@ from .steps.cases.pcan import (
 from .steps.cases.create_device_json import CreateDeviceJsonStep
 from .steps.cases.compare_version import CompareVersionStep
 from .steps.cases.mes_steps import MESHeartbeatStep, MESGetWorkOrderStep, MESUploadResultStep
-from .steps.cases.zebra_printer import ZebraPrintStep
+from .steps.cases.zebra_printer import ZebraPrintStep, ZebraImagePrintStep
 
 
 def register_all_steps():
@@ -286,6 +286,12 @@ def register_all_steps():
         step_type="printer.zebra",
         step_class=ZebraPrintStep,
         aliases=["zebra.print", "print.zebra", "zebra_printer"],
+    )
+
+    register(
+        step_type="printer.zebra.image",
+        step_class=ZebraImagePrintStep,
+        aliases=["zebra.print.image", "print.zebra.image", "zebra_image_printer"],
     )
 
 

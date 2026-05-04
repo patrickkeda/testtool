@@ -1,0 +1,62 @@
+version: '1.0'
+metadata:
+  name: vita-zebra-hardlock-0160
+  description: '打印前下发硬锁参数并打印0160冻结模板'
+  author: 'TestTool'
+  created_at: '2026-04-30T14:09:00.000000'
+  product: Vita01
+  station: LABEL
+  version: '1.0'
+
+variables:
+  zebra_printer_name: 'ZDesigner 110Xi4 600 dpi (副本 1)'
+
+steps:
+  - id: step_1
+    name: ZebraHardLockSetup
+    type: printer.zebra
+    params:
+      channel: local
+      printer_name: '${zebra_printer_name}'
+      copies: 1
+      # 硬锁打印机关键参数：标签尺寸/原点/偏移/速度/浓度
+      zpl: '^XA^PW2457^LL732^LH0,0^LT0^LS0^PR3,3~SD15^XZ'
+      encoding: 'utf-8'
+      timeout_ms: 3000
+      preview: false
+      preview_only: false
+      save_preview: false
+    timeout: 10000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_2
+    name: PrintLockedTemplate0160
+    type: printer.zebra
+    params:
+      channel: local
+      printer_name: '${zebra_printer_name}'
+      copies: 1
+      zpl_file: 'Result/print_preview/TEMPLATE_LOCK_0160.zpl'
+      encoding: 'utf-8'
+      timeout_ms: 3000
+      preview: false
+      preview_only: false
+      save_preview: false
+    timeout: 20000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+timeout: null
+retries: 0
+on_failure: stop

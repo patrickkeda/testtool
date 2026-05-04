@@ -236,6 +236,15 @@ class PrinterConfig(BaseModel):
     save_preview: bool = Field(True)
     preview_dir: str = Field("Result/print_preview")
     zpl_file: str = Field("", description="默认 ZPL 模板路径")
+    hardlock_enabled: bool = Field(False, description="是否在每次打印前下发硬锁ZPL")
+    hardlock_zpl: str = Field("", description="打印前下发的硬锁ZPL命令")
+    image_imei_x_px: int = Field(439, description="IMEI文本X坐标（像素）")
+    image_imei_y_px: int = Field(611, description="IMEI文本Y坐标（像素）")
+    image_scramble_x_px: int = Field(1616, description="扰码文本X坐标（像素）")
+    image_scramble_y_px: int = Field(557, description="扰码文本Y坐标（像素）")
+    image_imei_font_px: int = Field(43, description="IMEI字体像素大小")
+    image_scramble_font_px: int = Field(67, description="扰码字体像素大小")
+    image_threshold: int = Field(175, description="位图二值化阈值")
 
 
 class RootConfig(BaseModel):

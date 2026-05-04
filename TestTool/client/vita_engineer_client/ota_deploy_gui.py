@@ -5,6 +5,7 @@ import json
 import threading
 import fnmatch
 import shlex
+import re
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 from datetime import datetime
@@ -218,7 +219,6 @@ class DeployExecutor:
     def _build_screen_cmds(self, ip):
         """构建通过 HTTP 请求控制屏幕颜色的 curl 命令"""
         base_cmd = f"curl -s -X POST 'http://{ip}:3579/command' -H 'Content-Type: application/json'"
-        # JSON 使用双引号，大括号在 f-string 中使用 {{ }} 转义
         eng_cmd = f"{base_cmd} -d '{{\"command\":\"enfac=1,1%\",\"params\":{{\"op\":\"1\",\"en\":\"1\"}}}}'"
         grn_cmd = f"{base_cmd} -d '{{\"command\":\"lcd=1,green%\",\"params\":{{\"op\":\"1\",\"color\":\"green\"}}}}'"
         red_cmd = f"{base_cmd} -d '{{\"command\":\"lcd=1,red%\",\"params\":{{\"op\":\"1\",\"color\":\"red\"}}}}'"
@@ -241,6 +241,9 @@ class DeployExecutor:
 
             if item.get("s100") and s100_ssh:
                 try:
+                    rc, _, err = self._exec_and_check(s100_ssh, "systemctl stop vita01.target", "stop robot")
+                    if rc != 0:
+                        self.log(f"[S100 Stop Robot] ⚠️ 停止机器人服务失败: {err}")
                     rc, _, err = self._exec_and_check(s100_ssh, "mount -o remount,rw /app", "S100 Sync")
                     if rc != 0:
                         self.log(f"[S100 Sync] ⚠️ mount 失败: {err}")
@@ -263,6 +266,10 @@ class DeployExecutor:
 
             if item.get("x5") and x5_ssh:
                 try:
+                    rc, _, err = self._exec_and_check(x5_ssh, "systemctl stop vita01.target", "stop robot")
+                    if rc != 0:
+                        self.log(f"[X5 Stop Robot] ⚠️ 停止机器人服务失败: {err}")   
+                        
                     rc, _, err = self._exec_and_check(x5_ssh, "mount -o remount,rw /app", "X5 Sync")
                     if rc != 0:
                         self.log(f"[X5 Sync] ⚠️ mount /app 失败: {err}")
@@ -381,7 +388,6 @@ class DeployExecutor:
                     f"-o ConnectTimeout=3 {x5_ssh_auth} root@{self.cfg['x5_ip']} \"cat /tmp/ota_x5.result 2>/dev/null\""
                 )
                 
-                # 双端升级，S100负责汇总，IP使用 localhost
                 eng_cmd, grn_cmd, red_cmd = self._build_screen_cmds("localhost")
 
                 s100_inner_cmd = (
@@ -427,7 +433,6 @@ class DeployExecutor:
                 self._exec_and_check(ssh, f"rm -f '{result_file}'", f"{label} OTA", log_fail=False)
                 self._exec_and_check(ssh, f"rm -f '{log_file}'", f"{label} OTA", log_fail=False)
                 
-                # 单端升级判断对应 IP：若是 S100 本机调用则用 localhost，若是 X5 则用指定 IP
                 api_ip = "localhost" if label == "S100" else "192.168.127.2"
                 eng_cmd, grn_cmd, red_cmd = self._build_screen_cmds(api_ip)
 
@@ -491,6 +496,54 @@ class DeployExecutor:
         except Exception as e:
             self.log(f"[{label} OTA] ❌ 执行异常: {e}")
 
+# ── 弹窗类：SN 输入与校验 ──────────────────────────────────────────────────────────
+class SNDialog(tk.Toplevel):
+    def __init__(self, parent, initial_sn=""):
+        super().__init__(parent)
+        self.title("SN 与版本包校验")
+        self.result = None
+        self.sn_value = ""
+
+        self.transient(parent)
+        self.grab_set()
+
+        # 居中显示
+        window_width, window_height = 400, 150
+        position_right = int(parent.winfo_rootx() + parent.winfo_width()/2 - window_width/2)
+        position_down = int(parent.winfo_rooty() + parent.winfo_height()/2 - window_height/2)
+        self.geometry(f"{window_width}x{window_height}+{position_right}+{position_down}")
+
+        tk.Label(self, text="请输入 19 位 SN 码，用于校验选中的 APP 版本包：").pack(padx=20, pady=(15, 5))
+        self.entry = tk.Entry(self, width=35, font=("Arial", 11))
+        self.entry.pack(padx=20, pady=5)
+        self.entry.insert(0, initial_sn)
+        self.entry.focus_set()
+
+        self.entry.bind("<Return>", lambda e: self.on_confirm())
+
+        btn_frame = tk.Frame(self)
+        btn_frame.pack(pady=10)
+
+        tk.Button(btn_frame, text="✅ 确定并校验", command=self.on_confirm, bg="#007aff", fg="black").pack(side=tk.LEFT, padx=10)
+        tk.Button(btn_frame, text="⏭️ 跳过校验", command=self.on_skip).pack(side=tk.LEFT, padx=10)
+        tk.Button(btn_frame, text="✖ 取消", command=self.on_cancel).pack(side=tk.LEFT, padx=10)
+
+        self.protocol("WM_DELETE_WINDOW", self.on_cancel)
+        self.wait_window(self)
+
+    def on_confirm(self):
+        self.sn_value = self.entry.get().strip()
+        self.result = "confirm"
+        self.destroy()
+
+    def on_skip(self):
+        self.result = "skip"
+        self.destroy()
+
+    def on_cancel(self):
+        self.result = "cancel"
+        self.destroy()
+
 # ── GUI 界面 ──────────────────────────────────────────────────────────
 class OTADeployGUI:
     def __init__(self, root):
@@ -502,6 +555,7 @@ class OTADeployGUI:
         
         self.cfg = load_config()
         self.sync_rows = [] 
+        self.last_sn = "" # 缓存上次输入的 SN
         
         self._build_ui()
         self._load_fields()
@@ -536,7 +590,9 @@ class OTADeployGUI:
             ent = tk.Entry(r, bg="white"); ent.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
             tk.Button(r, text="选择", command=lambda e=ent, p=p: self._browse_ota(e, p)).pack(side=tk.RIGHT)
             self.ota_paths[l] = ent
-        self.ota_btn = tk.Button(f_ota, text="🚀 执行 OTA 升级", bg="#007aff", font=("Arial", 10, "bold"), command=lambda: self._start("ota"))
+        
+        # 将原直接调用 _start("ota") 改为调用前置校验方法
+        self.ota_btn = tk.Button(f_ota, text="🚀 执行 OTA 升级", bg="#007aff", font=("Arial", 10, "bold"), command=self._pre_start_ota)
         self.ota_btn.pack(pady=5)
 
         f_sync = tk.LabelFrame(container, text=" 3. 快速文件同步 ", bg="#eef9f0", padx=10, pady=5)
@@ -588,13 +644,72 @@ class OTADeployGUI:
         tk.Button(f, text="✖", fg="red", command=lambda: [f.destroy(), self.sync_rows.remove(obj)]).pack(side=tk.RIGHT, padx=3)
         self.sync_rows.append(obj)
 
+    def _pre_start_ota(self):
+        """OTA执行前的校验逻辑"""
+        cfg = self._get_ui_cfg()
+        if not (cfg["ota_target_s100"] or cfg["ota_target_x5"]):
+            return messagebox.showwarning("提示", "未选择任何 OTA 升级目标。")
+        
+        if cfg["ota_target_s100"] and not cfg["s100_app_path"]:
+            return messagebox.showwarning("提示", "已勾选 S100，但未选择 S100 APP 升级包。")
+            
+        if cfg["ota_target_x5"] and not cfg["x5_app_path"]:
+            return messagebox.showwarning("提示", "已勾选 X5，但未选择 X5 APP 升级包。")
+
+        # 弹出 SN 输入窗口
+        dialog = SNDialog(self.root, initial_sn=self.last_sn)
+        
+        if dialog.result == "cancel" or dialog.result is None:
+            return  # 用户取消操作
+            
+        if dialog.result == "skip":
+            self._start("ota")
+            return
+            
+        if dialog.result == "confirm":
+            sn = dialog.sn_value
+            self.last_sn = sn # 缓存本次输入的SN
+            
+            # 1. 校验 SN 格式 (19位，仅字母和数字)
+            if not re.match(r'^[A-Za-z0-9]{19}$', sn):
+                messagebox.showerror("校验失败", "SN 格式错误：必须是精确的 19 位字符，且只能包含字母和数字。")
+                return
+                
+            # 2. 判断对应版本特征字符
+            required_keyword = None
+            if "8010001" in sn or "8010002" in sn:
+                required_keyword = "edu"
+            elif "8010003" in sn or "8010004" in sn:
+                required_keyword = "pro"
+            elif "8010005" in sn or "8010006" in sn:
+                required_keyword = "max"
+                
+            # 3. 校验 APP 包名
+            if required_keyword:
+                errors = []
+                if cfg["ota_target_s100"]:
+                    s100_app = os.path.basename(cfg["s100_app_path"]).lower()
+                    if required_keyword not in s100_app:
+                        errors.append(f"S100 APP ({s100_app}) 未包含特征字 '{required_keyword}'")
+                
+                if cfg["ota_target_x5"]:
+                    x5_app = os.path.basename(cfg["x5_app_path"]).lower()
+                    if required_keyword not in x5_app:
+                        errors.append(f"X5 APP ({x5_app}) 未包含特征字 '{required_keyword}'")
+                        
+                if errors:
+                    err_msg = "\n".join(errors)
+                    messagebox.showerror("校验失败", f"该 SN 对应需要【{required_keyword.upper()}】版本的 APP 包，但检查不匹配：\n\n{err_msg}")
+                    return
+            
+            # 校验全部通过，执行后续
+            self._start("ota")
+
     def _start(self, mode):
         cfg = self._get_ui_cfg()
         if mode == "sync":
             valid = [i for i in cfg["sync_items"] if i["src"].strip() and (i["s100"] or i["x5"])]
             if not valid: return messagebox.showwarning("提示", "同步列表为空或未选目标。")
-        elif mode == "ota" and not (cfg["ota_target_s100"] or cfg["ota_target_x5"]):
-            return messagebox.showwarning("提示", "未选择 OTA 目标。")
         
         save_config(cfg)
         self.log_area.delete(1.0, tk.END)

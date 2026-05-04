@@ -1,0 +1,110 @@
+version: '1.0'
+metadata:
+  name: vita-zebra-imei-scramble-print
+  description: '根据SN读取IMEI和扰码并打印标签'
+  author: 'TestTool'
+  created_at: '2026-04-30T11:45:00.000000'
+  product: Vita01
+  station: LABEL
+  version: '1.0'
+
+variables:
+  robot_ip: "192.168.126.2"
+  robot_port: 3579
+  zebra_printer_name: 'ZDesigner 110Xi4 600 dpi (副本 1)'
+
+steps:
+  - id: step_1
+    name: ScanSN
+    type: scan.sn
+    params:
+      dialog_title: '扫描SN用于读取IMEI和扰码'
+      hint: '请扫描/输入SN（共19位，且前5位为80100）后回车'
+      regex: '^80100[A-Z0-9]{14}$'
+      timeout_ms: 60000
+    timeout: 65000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_2
+    name: EnterEngineerMode
+    type: engineer.test
+    params:
+      command: 'enfac=1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_3
+    name: ReadIMEI
+    type: engineer.test
+    params:
+      command: 'imei=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_4
+    name: ReadScramble
+    type: engineer.test
+    params:
+      command: 'scramble=0,${sn},${imei}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_5
+    name: PrintImeiScrambleLabel
+    type: printer.zebra.image
+    params:
+      channel: local
+      printer_name: '${zebra_printer_name}'
+      hardlock_enabled: true
+      copies: 1
+      imei: '${imei}'
+      scramble: '${scramble}'
+      imei_font_source: 'Result/font_sources/vbot_zip/Vbot Sans'
+      scramble_font_source: 'Result/font_sources/许可标志样式矢量图及字体库'
+      save_preview: true
+      preview: false
+    timeout: 15000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+timeout: null
+retries: 0
+on_failure: stop

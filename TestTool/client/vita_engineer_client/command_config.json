@@ -36,7 +36,7 @@
           "name": "mode",
           "description": "模式名称",
           "required": false,
-          "valid_values": ["burnin", "mtf", "mtb", "mtl", "mtr", "noise", "laydown", "stand", "stop", "mpc", "rl_stand", "navi", "restart"]
+          "valid_values": ["burnin", "mtf", "mtb", "mtl", "mtr", "noise", "laydown", "stand", "stop", "mpc", "rl_stand", "navi", "restart", "body_stable"]
         },
         {
           "name": "sec",
@@ -156,7 +156,7 @@
           "name": "op",
           "description": "操作类型",
           "required": true,
-          "valid_values": ["0", "1", "2"]
+          "valid_values": ["0", "1", "2", "3"]
         },
         {
           "name": "text",
@@ -167,12 +167,18 @@
           "name": "sn",
           "description": "设备SN (仅当op=2时有效，用于语音license激活)",
           "required": false
+        },
+        {
+          "name": "volume",
+          "description": "音量值",
+          "required": false
         }
       ],
       "operation_mapping": {
         "0": "播放\"大头起床了\" (机器语 tts_getup)",
         "1": "播放指定文本音频",
-        "2": "拉取语音license（需要sn参数）"
+        "2": "拉取语音license（需要sn参数）",
+        "3": "设置语音音量"
       }
     },
     "servo": {
@@ -931,6 +937,31 @@
       ],
       "operation_mapping": {
         "0": "查询IMEI"
+      }
+    },
+    "scramble": {
+      "description": "获取设备扰码",
+      "parameter_count": 3,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0"]
+        },
+        {
+          "name": "sn",
+          "description": "设备SN",
+          "required": true
+        },
+        {
+          "name": "imei",
+          "description": "设备IMEI",
+          "required": true
+        }
+      ],
+      "operation_mapping": {
+        "0": "根据 sn 和 imei 获取扰码"
       }
     }
   }

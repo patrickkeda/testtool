@@ -12,6 +12,8 @@ variables:
   robot_ip: "192.168.126.2"
   robot_port: 3579
   zebra_printer_name: 'ZDesigner 110Xi4 600 dpi (副本 1)'
+  battery_percent_min: 0
+  battery_percent_max: 100
 
 steps:
 
@@ -133,10 +135,9 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 6: 读取 imei (读取 x5 和 s100 的 soc_id)
-  # 注意：socid=0% 命令可能返回 x5 和 s100 的 soc_id，需要根据实际响应格式解析
+  # Step 6: 读取 IMEI
   - id: step_6
-    name: ReadSOC
+    name: ReadIMEI
     type: engineer.test
     params:
       command: 'imei=0%'
@@ -155,6 +156,7 @@ steps:
   # Step 7: 创建 device.json 文件
   # 从前面步骤的结果中提取数据并创建 JSON 文件
   # 文件路径: TestTool\Result\upload\${sn}\device.json
+  # factoryDownloadVersion/factoryInstallVersion: V1.0.0~20260429022512
   - id: step_7
     name: CreateDeviceJson
     type: case.create_device_json
@@ -208,9 +210,9 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 6: 读取 扰码 (读取 x5 和 s100 的 soc_id)
+  # Step 10.1: 读取扰码（依赖 Step 6 获取到的 imei）
   - id: step_10.1
-    name: ReadSOC
+    name: ReadScramble
     type: engineer.test
     params:
       command: 'scramble=0,${sn},${imei}%'
@@ -218,6 +220,29 @@ steps:
       port: ${robot_port}
       timeout: 30
     timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 10.2: 打印 IMEI + 扰码 标签
+  - id: step_10.2
+    name: PrintImeiScrambleLabel
+    type: printer.zebra.image
+    params:
+      channel: local
+      printer_name: '${zebra_printer_name}'
+      copies: 1
+      imei: '${imei}'
+      scramble: '${scramble}'
+      imei_font_source: 'Result/font_sources/vbot_zip/Vbot Sans'
+      scramble_font_source: 'Result/font_sources/许可标志样式矢量图及字体库'
+      save_preview: true
+      preview: false
+    timeout: 15000
     retries: 1
     condition: null
     expect: null
@@ -236,24 +261,6 @@ steps:
       port: ${robot_port}
       timeout: 300
     timeout: 350000
-    retries: 1
-    condition: null
-    expect: null
-    on_failure: fail
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
-
-  # Step 9: 4G 信号检测
-  - id: step_9
-    name: Signal4GTest
-    type: engineer.test
-    params:
-      command: 'sig4g=0%'
-      robot_ip: '${robot_ip}'
-      port: ${robot_port}
-      timeout: 60
-    timeout: 65000
     retries: 1
     condition: null
     expect: null
@@ -298,23 +305,6 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 11: 电池检测
-  - id: step_11.1
-    name: GNSSTest
-    type: engineer.test
-    params:
-      command: 'battery=1,45,50%'
-      robot_ip: '${robot_ip}'
-      port: ${robot_port}
-      timeout: 30
-    timeout: 35000
-    retries: 1
-    condition: null
-    expect: null
-    on_failure: fail
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
 
   # Step 12: 弹窗 - 请将网线拔掉，并等待机器狗行走
   - id: step_12
@@ -422,23 +412,23 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # Step 20: 唤醒大头
-  # - id: step_20
-  #   name: WakeUpHead
-  #   type: engineer.test
-  #   params:
-  #     command: 'tts=0%'
-  #     robot_ip: '${robot_ip}'
-  #     port: ${robot_port}
-  #     timeout: 30
-  #   timeout: 35000
-  #   retries: 1
-  #   condition: null
-  #   expect: null
-  #   on_failure: fail
-  #   at_config: null
-  #   state_measurement_config: null
-  #   manual_judgment_config: null
+  # Step 20: 唤醒大头
+  - id: step_20
+    name: WakeUpHead
+    type: engineer.test
+    params:
+      command: 'tts=2,sn=${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
 
   # # Step 21: 坐下
   # - id: step_21
@@ -481,31 +471,6 @@ steps:
       duration_ms: 5000
     timeout: 5200
     retries: 0
-    condition: null
-    expect: null
-    on_failure: fail
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
-
-  # Step 16.1: 标签打印（SN/IMEI/扰码）
-  - id: step_16.1
-    name: ZebraTemplatePrint
-    type: printer.zebra
-    params:
-      channel: local
-      printer_name: '${zebra_printer_name}'
-      copies: 1
-      zpl_file: 'Seq/zebra_sn_label.zpl'
-      encoding: 'utf-8'
-      timeout_ms: 3000
-      preview: true
-      preview_only: false
-      save_preview: true
-      preview_dir: 'Result/print_preview'
-      preview_file_name: 'label_${sn}.zpl'
-    timeout: 20000
-    retries: 1
     condition: null
     expect: null
     on_failure: fail

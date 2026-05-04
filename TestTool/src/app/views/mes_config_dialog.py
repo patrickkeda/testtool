@@ -562,7 +562,7 @@ class MESConfigDialog(QDialog):
                 return
 
             # MES配置修改保护：保存前需要输入密码
-            ok, password = QInputDialog.getText(
+            password, ok = QInputDialog.getText(
                 self,
                 "MES配置确认",
                 "请输入修改密码:",

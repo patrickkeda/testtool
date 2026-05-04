@@ -1,0 +1,15 @@
+[
+  {
+    "snNumber": "8010005BHQ26DSA0153",
+    "imeiNumber": "862419089523897",
+    "name": "pvt5DSA0153",
+    "parentId": "vbotPVTsample",
+    "deviceType": "direct",
+    "alias": "大头5DSA0153",
+    "factoryDownloadVersion": "V1.0.0~20260429022512",
+    "factoryInstallVersion": "V1.0.0~20260429022512",
+    "description": "Vita robot pvt no.8010005BHQ26DSA0153",
+    "status": "1",
+    "linkStatus": "offline"
+  }
+]

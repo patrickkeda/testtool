@@ -24,8 +24,11 @@ build/
 ### 方法 1: 使用 Batch 脚本（推荐）
 
 1. 双击运行 `build.bat`
-2. 等待构建完成
-3. 构建产物位于 `../dist/TestTool.exe`
+2. 选择打包模式：
+   - `1` 完全打包（输出完整 `dist/TestTool`）
+   - `2` 增量打包（比对打包库最新版本，仅输出改动文件）
+3. 等待构建完成
+4. 构建产物位于 `../dist/`
 
 ### 方法 2: 使用 PowerShell 脚本
 
@@ -33,10 +36,14 @@ build/
 2. 或者打开 PowerShell，执行：
    ```powershell
    cd build
-   .\build.ps1
+   .\build.ps1 -PackageMode full
+   # 或
+   .\build.ps1 -PackageMode incremental
    ```
-3. 等待构建完成
-4. 构建产物位于 `../dist/TestTool.exe`
+3. 增量模式默认从 `build\TestTool_Package_build` 下选择基线包进行比对：
+   - 优先选择目录名中版本号最高的包（例如 `v1.2.3`、`1.2.3`、`release-1.2.3.4`）
+   - 若都无法解析版本号，则回退为“最后修改时间最新”的有效包
+4. 构建产物位于 `../dist/`
 
 ### 方法 3: 手动执行
 
