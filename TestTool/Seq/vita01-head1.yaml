@@ -11,7 +11,9 @@ metadata:
 variables:
   robot_ip: "192.168.126.2"
   robot_port: 3579
-  
+  # X5 经 S100 跳板 SSH 录音测试（与 mic_test.py 拓扑一致）
+  x5_ip: "192.168.127.10"
+
   # PLC Modbus RTU 串口参数（满足 9600 8O1）
   plc_serial_port: 'COM3'        # 根据实际治具 PLC 所在串口修改
   plc_baudrate: 9600
@@ -137,6 +139,24 @@ steps:
       description: 'S100上电：写寄存器 002052 (R3) = 1'
     timeout: 5000
     retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # X5 8 路录音（经 S100 跳板 SSH，逻辑同 Downloads/mic_test.py；私钥用应用配置「SSH」页）
+  - id: step_x5_mic
+    name: X5MicRecord
+    type: case.mic_record_ssh
+    params:
+      jump_host: '${robot_ip}'
+      target_host: '${x5_ip}'
+      username: root
+      command: 'arecord -D remap8ch -c 8 -r 16000 -f S16_LE -d 5 /tmp/test.wav'
+    timeout: 90000
+    retries: 1
     condition: null
     expect: null
     on_failure: fail

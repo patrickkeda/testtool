@@ -22,6 +22,8 @@ class DelayStep(BaseStep):
         - message: 延时期间的提示信息（可选）
         - show_countdown: 是否显示倒计时弹窗（可选）
         - title: 倒计时弹窗标题（可选）
+        - countdown_allow_interrupt: 倒计时是否允许关闭窗口中断（可选，默认 False；
+          True 时用户关闭窗口则本步骤失败）
         """
         # 1) 读取本步参数（兼容多个字段名）
         raw_delay = None
@@ -41,6 +43,9 @@ class DelayStep(BaseStep):
         message = self.get_param_str(params, "message", f"延时 {delay_ms}ms")
         show_countdown = self.get_param_bool(params, "show_countdown", False)
         title = self.get_param_str(params, "title", "倒计时")
+        countdown_allow_interrupt = self.get_param_bool(
+            params, "countdown_allow_interrupt", False
+        )
         
         # 2) 执行延时
         try:
@@ -48,12 +53,25 @@ class DelayStep(BaseStep):
             if show_countdown:
                 try:
                     from src.app.ui_invoker import invoke_in_gui_countdown
-                    invoke_in_gui_countdown(
+
+                    ok_cd = invoke_in_gui_countdown(
                         title=title,
                         message=message,
                         duration_ms=delay_ms,
                         port=ctx.port,
+                        allow_interrupt=countdown_allow_interrupt,
                     )
+                    if not ok_cd:
+                        ctx.log_warning("倒计时未正常完成（被关闭或异常）")
+                        return self.create_failure_result(
+                            "倒计时被中断",
+                            error="COUNTDOWN_INTERRUPTED",
+                            data={
+                                "delay_ms": delay_ms,
+                                "show_countdown": True,
+                                "countdown_allow_interrupt": countdown_allow_interrupt,
+                            },
+                        )
                 except Exception as exc:
                     # 在无 GUI 或 GUI 调用失败时，回退为普通延时，避免流程中断。
                     ctx.log_warning(f"倒计时弹窗显示失败，回退为普通延时: {exc}")

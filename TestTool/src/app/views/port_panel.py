@@ -47,7 +47,6 @@ class PortPanel(QWidget):
     sig_start = Signal()
     sig_pause = Signal()
     sig_stop = Signal()
-    sig_retest = Signal()  # 复测信号：使用上一次SN并跳过扫描
     sig_mode_changed = Signal(str)  # 测试模式改变信号：'production' 或 'debug'
 
     def __init__(self, title: str, parent: Optional[QWidget] = None) -> None:
@@ -114,7 +113,6 @@ class PortPanel(QWidget):
         self.btn_start = QPushButton(self._i18n.t("panel.actions.start"), self)
         self.btn_pause = QPushButton(self._i18n.t("panel.actions.pause"), self)
         self.btn_stop = QPushButton(self._i18n.t("panel.actions.stop"), self)
-        self.btn_retest = QPushButton("复测", self)
         
         # 设置按钮样式
         self._setup_button_style()
@@ -123,13 +121,11 @@ class PortPanel(QWidget):
         self.btn_start.clicked.connect(self.sig_start.emit)
         self.btn_pause.clicked.connect(self.sig_pause.emit)
         self.btn_stop.clicked.connect(self.sig_stop.emit)
-        self.btn_retest.clicked.connect(self.sig_retest.emit)
         
         # 添加按钮到布局 - 恢复到原来的紧凑布局
         actions.addWidget(self.btn_start)
         actions.addWidget(self.btn_pause)
         actions.addWidget(self.btn_stop)
-        actions.addWidget(self.btn_retest)
         
         # 添加测试模式选择器
         mode_label = QLabel("测试模式:", self)
@@ -224,26 +220,22 @@ class PortPanel(QWidget):
         self.btn_start.setFont(base_font)
         self.btn_pause.setFont(base_font)
         self.btn_stop.setFont(base_font)
-        self.btn_retest.setFont(base_font)
         
         # 设置图标 - 与主界面相同的图标
         self.btn_start.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.btn_pause.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
         self.btn_stop.setIcon(self.style().standardIcon(QStyle.SP_MediaStop))
-        self.btn_retest.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
         
         # 设置图标大小 - 正常尺寸
         icon_size = QSize(20, 20)  # 20x20像素
         self.btn_start.setIconSize(icon_size)
         self.btn_pause.setIconSize(icon_size)
         self.btn_stop.setIconSize(icon_size)
-        self.btn_retest.setIconSize(icon_size)
         
         # 设置按钮大小策略 - 固定宽度
         self.btn_start.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.btn_pause.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.btn_stop.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.btn_retest.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         
         # 设置按钮尺寸 - 正常高度
         min_height = 30
@@ -251,7 +243,6 @@ class PortPanel(QWidget):
         self.btn_start.setMinimumSize(min_width, min_height)
         self.btn_pause.setMinimumSize(min_width, min_height)
         self.btn_stop.setMinimumSize(min_width, min_height)
-        self.btn_retest.setMinimumSize(min_width, min_height)
         
         # 设置按钮样式 - 简洁风格
         button_style = """
@@ -281,7 +272,6 @@ class PortPanel(QWidget):
         self.btn_start.setStyleSheet(button_style)
         self.btn_pause.setStyleSheet(button_style)
         self.btn_stop.setStyleSheet(button_style)
-        self.btn_retest.setStyleSheet(button_style)
     
     
     def add_test_result(self, step_name: str, value: str = "", low: str = "", high: str = "", unit: str = "", result: str = "Pass") -> None:

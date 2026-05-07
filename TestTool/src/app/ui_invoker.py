@@ -17,8 +17,16 @@ from src.testcases.steps.cases.scan_sn import ScanSNDialog
 class _UIInvoker(QObject):
     """主线程UI调用器。"""
 
-    @Slot(str, str, str, int, str, result=tuple)
-    def show_scan_sn(self, title: str, hint: str, regex: str, timeout_ms: int, port: str) -> Tuple[bool, str]:
+    @Slot(str, str, str, int, str, bool, result=tuple)
+    def show_scan_sn(
+        self,
+        title: str,
+        hint: str,
+        regex: str,
+        timeout_ms: int,
+        port: str,
+        force_english_keyboard: bool,
+    ) -> Tuple[bool, str]:
         app = QApplication.instance()
         # 尝试获取主窗口作为父对象
         parent_window = None
@@ -36,6 +44,7 @@ class _UIInvoker(QObject):
             regex=regex,
             timeout_ms=timeout_ms,
             port=port,
+            force_english_keyboard=force_english_keyboard,
         )
         # 应用退出时确保对话框关闭
         try:
@@ -92,7 +101,16 @@ def _render_countdown_message(message: str, remaining_seconds: int, mmss_text: s
     return f"{template}\n\n剩余时间: {mmss_text}"
 
 
-def invoke_in_gui_show_scan_sn(title: str, hint: str, regex: str, timeout_ms: int, port: str = "PortA", main_window=None) -> Tuple[bool, str]:
+def invoke_in_gui_show_scan_sn(
+    title: str,
+    hint: str,
+    regex: str,
+    timeout_ms: int,
+    port: str = "PortA",
+    main_window=None,
+    *,
+    force_english_keyboard: bool = True,
+) -> Tuple[bool, str]:
     """在主线程阻塞调用显示ScanSN对话框并返回结果。"""
     print(f"[{port}] UI调用器被调用: title={title}, port={port}")
     
@@ -141,6 +159,7 @@ def invoke_in_gui_show_scan_sn(title: str, hint: str, regex: str, timeout_ms: in
                 timeout_ms=timeout_ms,
                 port=port,
                 main_window=main_window_local,
+                force_english_keyboard=force_english_keyboard,
             )
             # 应用退出时确保对话框关闭
             try:
@@ -167,8 +186,8 @@ def invoke_in_gui_show_scan_sn(title: str, hint: str, regex: str, timeout_ms: in
         class DialogHelper(QObject):
             finished = Signal(bool, str)
             
-            @Slot(str, str, str, int, str)
-            def show_dialog(self, title, hint, regex, timeout_ms, port):
+            @Slot(str, str, str, int, str, bool)
+            def show_dialog(self, title, hint, regex, timeout_ms, port, force_english_keyboard):
                 print(f"[{port}] DialogHelper.show_dialog被调用")
                 from PySide6.QtCore import QEventLoop
                 from PySide6.QtWidgets import QDialog
@@ -194,6 +213,7 @@ def invoke_in_gui_show_scan_sn(title: str, hint: str, regex: str, timeout_ms: in
                             timeout_ms=timeout_ms,
                             port=port,
                             main_window=main_window_local,
+                            force_english_keyboard=force_english_keyboard,
                         )
                         try:
                             QApplication.instance().aboutToQuit.connect(dlg.close)
@@ -239,7 +259,8 @@ def invoke_in_gui_show_scan_sn(title: str, hint: str, regex: str, timeout_ms: in
             Q_ARG(str, hint),
             Q_ARG(str, regex),
             Q_ARG(int, timeout_ms),
-            Q_ARG(str, port)
+            Q_ARG(str, port),
+            Q_ARG(bool, force_english_keyboard),
         )
         
         # 等待结果
@@ -346,8 +367,10 @@ def _show_pass_fail_dialog(
     return outcome["v"]
 
 
-def _show_countdown_dialog(title: str, message: str, duration_ms: int) -> bool:
-    """在主线程显示自动结束的倒计时对话框。"""
+def _show_countdown_dialog(
+    title: str, message: str, duration_ms: int, allow_interrupt: bool = False
+) -> bool:
+    """在主线程显示自动结束的倒计时对话框。allow_interrupt=True 时允许关闭窗口，视为未正常完成（返回 False）。"""
     from time import monotonic
 
     from PySide6.QtCore import QTimer
@@ -361,7 +384,7 @@ def _show_countdown_dialog(title: str, message: str, duration_ms: int) -> bool:
     dialog.setWindowTitle(title or "倒计时")
     dialog.setModal(True)
     dialog.setMinimumSize(460, 220)
-    dialog.setWindowFlag(Qt.WindowCloseButtonHint, False)
+    dialog.setWindowFlag(Qt.WindowCloseButtonHint, bool(allow_interrupt))
 
     layout = QVBoxLayout(dialog)
 
@@ -412,8 +435,10 @@ def invoke_in_gui_countdown(
     message: str,
     duration_ms: int,
     port: str = "PortA",
+    *,
+    allow_interrupt: bool = False,
 ) -> bool:
-    """在主线程显示自动结束的倒计时提示框。"""
+    """在主线程显示自动结束的倒计时提示框。关闭窗口（allow_interrupt 时）返回 False。"""
     from PySide6.QtCore import QEventLoop, QThread, Signal
 
     app = QApplication.instance()
@@ -424,15 +449,17 @@ def invoke_in_gui_countdown(
     main_thread = app.thread()
 
     if current_thread == main_thread:
-        return _show_countdown_dialog(title, message, duration_ms)
+        return _show_countdown_dialog(title, message, duration_ms, allow_interrupt)
 
     class CountdownHelper(QObject):
         finished = Signal(bool)
 
-        @Slot(str, str, int)
-        def show_dialog(self, dlg_title, dlg_message, dlg_duration_ms):
+        @Slot(str, str, int, bool)
+        def show_dialog(self, dlg_title, dlg_message, dlg_duration_ms, dlg_allow_interrupt):
             try:
-                result = _show_countdown_dialog(dlg_title, dlg_message, dlg_duration_ms)
+                result = _show_countdown_dialog(
+                    dlg_title, dlg_message, dlg_duration_ms, dlg_allow_interrupt
+                )
             except Exception:
                 result = False
             self.finished.emit(result)
@@ -456,6 +483,7 @@ def invoke_in_gui_countdown(
         Q_ARG(str, title),
         Q_ARG(str, message),
         Q_ARG(int, int(duration_ms)),
+        Q_ARG(bool, bool(allow_interrupt)),
     )
 
     loop.exec()

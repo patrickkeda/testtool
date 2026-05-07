@@ -125,6 +125,8 @@ ports:
       port: 5020
       timeout_ms: 2000
       retries: 3
+ssh:
+  private_key_path: C:/Users/VitaDynamics/Desktop/id_ed25519_evt_board
 mes:
   vendor: huaqin_qmes
   base_url: http://10.51.66.36/API.MD4H/HQAPI
@@ -171,7 +173,7 @@ mes:
   headers:
     Content-Type: application/json
   station_id: MES_DEBUG
-  enabled: true
+  enabled: false
 printer:
   enabled: true
   channel: tcp
@@ -214,6 +216,6 @@ versions:
     sw_version: 1.3.1
 test_sequence:
   file: Seq/ft1.yaml
-  last_used: D:/testtools/TestTool-v0.4/TestTool/Seq/vita-zebra-imei-scramble-print.yaml
+  last_used: D:/testtools/TestTool-v0.4/TestTool/Seq/pvt_stress_ssh.yaml
 selfcheck:
   checklist: config/selfcheck.yaml

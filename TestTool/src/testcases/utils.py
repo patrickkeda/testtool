@@ -2,15 +2,55 @@
 测试用例工具函数
 """
 
-import yaml
 import json
-from pathlib import Path
-from typing import Dict, Any, Optional, List
 import logging
+import re
+import yaml
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from .config import TestSequenceConfig
 
 logger = logging.getLogger(__name__)
+
+_PLACEHOLDER = re.compile(r"\$\{([^}]+)\}")
+
+
+def resolve_placeholders_in_params(params: Dict[str, Any], ctx: Any) -> Dict[str, Any]:
+    """将步骤 params 中字符串里的 ${var} / ${context.xxx} 替换为上下文中的值（含序列 variables 注入）。"""
+
+    def _one_str(s: str) -> str:
+        def repl(m: re.Match) -> str:
+            key = m.group(1).strip()
+            if key.startswith("context."):
+                k = key[len("context.") :]
+                v = ctx.get_data(k, None)
+                return "" if v is None else str(v)
+            v = ctx.get_data(key, None)
+            if v is not None:
+                return str(v)
+            return m.group(0)
+
+        # 多轮替换：支持 variables 中「变量引用变量」
+        # 例如 script_args: '${pvt_script_args}' 展开后仍含 ${pvt_stress_loops}
+        out = s
+        for _ in range(32):
+            nxt = _PLACEHOLDER.sub(repl, out)
+            if nxt == out:
+                break
+            out = nxt
+        return out
+
+    def _walk(val: Any) -> Any:
+        if isinstance(val, str):
+            return _one_str(val)
+        if isinstance(val, dict):
+            return {k: _walk(v) for k, v in val.items()}
+        if isinstance(val, list):
+            return [_walk(v) for v in val]
+        return val
+
+    return _walk(dict(params or {}))
 
 
 def load_test_sequence(file_path: str) -> TestSequenceConfig:

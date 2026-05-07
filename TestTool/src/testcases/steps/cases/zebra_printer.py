@@ -11,9 +11,9 @@ import socket
 import ctypes
 import ctypes.wintypes as wintypes
 import os
+import shutil
 import tempfile
 import zipfile
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional, List, Tuple
@@ -101,9 +101,9 @@ class ZebraPrintStep(BaseStep):
         save_preview = self.get_param_bool(effective, "save_preview", True)
 
         try:
-            zpl_text = self._load_zpl_text(effective)
+            zpl_text = self._load_or_build_zpl_text(ctx, effective)
         except Exception as e:  # noqa: BLE001
-            return self.create_failure_result("读取ZPL模板失败", error=str(e))
+            return self.create_failure_result("读取/生成ZPL模板失败", error=str(e))
 
         if not zpl_text.strip():
             return self.create_failure_result("ZPL内容为空", error="PARAM_ZPL_EMPTY")
@@ -741,6 +741,343 @@ class ZebraPrintStep(BaseStep):
         if not file_path.exists():
             raise FileNotFoundError(f"ZPL模板不存在: {file_path}")
         return file_path.read_text(encoding="utf-8")
+
+    def _load_or_build_zpl_text(self, ctx: Context, params: Dict[str, Any]) -> str:
+        mode = str(params.get("label_mode", "") or "").strip().lower()
+        if mode not in {"vitad011", "vitad011_vbot"}:
+            return self._load_zpl_text(params)
+        return self._build_vitad011_label_zpl(ctx, params)
+
+    def _build_vitad011_label_zpl(self, ctx: Context, params: Dict[str, Any]) -> str:
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(f"缺少 Pillow 依赖，无法渲染标签图片: {e}") from e
+
+        dpi = int(params.get("dpi", 203))
+        label_width_mm = float(params.get("label_width_mm", 104.0))
+        label_height_mm = float(params.get("label_height_mm", 31.0))
+        width = int(params.get("label_width_px", self._mm_to_px(label_width_mm, dpi)))
+        height = int(params.get("label_height_px", self._mm_to_px(label_height_mm, dpi)))
+        threshold = int(params.get("bw_threshold", 175))
+        x_offset = self._mm_to_px(float(params.get("x_offset_mm", 0.0)), dpi)
+        y_offset = self._mm_to_px(float(params.get("y_offset_mm", 0.0)), dpi)
+
+        imei_value = self._resolve_var("imei", ctx, params) or str(params.get("imei", "") or "")
+        cmit_id = self._resolve_var("cmit_id", ctx, params) or str(params.get("cmit_id", "26C11H2Z8Y4I1") or "")
+        sn = self._resolve_var("sn", ctx, params)
+        scramble = (
+            self._resolve_var("扰码", ctx, params)
+            or self._resolve_var("raoma", ctx, params)
+            or self._resolve_var("scramble_code", ctx, params)
+            or self._resolve_var("scramble", ctx, params)
+        )
+        if not imei_value:
+            imei_value = "XXXXXXXXXXXXXX"
+        if not sn:
+            sn = "561007"
+        if not scramble:
+            scramble = sn
+
+        imei_font_source = str(params.get("imei_font_source", r"C:\Windows\Fonts\calibri.ttf") or "").strip()
+        text_font_source = str(
+            params.get("text_font_source", r"C:\Users\VitaDynamics\Downloads\许可标志样式矢量图及字体库(1).rar")
+            or ""
+        ).strip()
+
+        fields_only = self.get_param_bool(params, "fields_only", False)
+
+        if fields_only:
+            use_native = self.get_param_bool(params, "fields_only_native_zpl", False)
+            if use_native:
+                return self._build_fields_only_zpl(params, imei_value, scramble, dpi, x_offset, y_offset)
+            return self._build_fields_only_image_zpl(
+                params,
+                imei_value,
+                scramble,
+                dpi,
+                width,
+                height,
+                threshold,
+                x_offset,
+                y_offset,
+                imei_font_source,
+                text_font_source,
+            )
+
+        with tempfile.TemporaryDirectory(prefix="zebra_fonts_") as tmpdir:
+            tmp = Path(tmpdir)
+            imei_font_path = self._resolve_font_file(imei_font_source, tmp / "imei")
+            text_font_path = self._resolve_font_file(text_font_source, tmp / "text")
+
+            # 中文字体优先使用 text_font_source，IMEI 单独使用 imei_font_source
+            s = max(0.45, min(2.0, width / 800.0))
+            font_small = self._safe_truetype(ImageFont, text_font_path, int(26 * s))
+            font_mid = self._safe_truetype(ImageFont, text_font_path, int(34 * s))
+            font_big = self._safe_truetype(ImageFont, text_font_path, int(58 * s))
+            font_imei = self._safe_truetype(ImageFont, imei_font_path, int(34 * s))
+
+            img = Image.new("L", (width, height), 255)
+            draw = ImageDraw.Draw(img)
+
+            # 左侧信息
+            left_x = int(20 * s) + x_offset
+            y = int(16 * s) + y_offset
+            lines = [
+                ("品牌/名称:  Vbot维他动力", font_small),
+                ("产品名称:  仿生四足机器人", font_small),
+                ("产品型号:  VITAD011Vbot", font_small),
+                ("额定电压:  39.6V==", font_small),
+                ("额定功率:  150W", font_small),
+                ("充电电压:  28V==或48V== (最大)", font_small),
+                ("制  造  商:  维他动力 (北京) 科技有限公司", font_small),
+                ("产      地:  广东东莞", font_small),
+                ("执行标准:  GB 4943.1-2022", font_small),
+                (f"CMIIT ID :  {cmit_id}", font_mid),
+            ]
+            for text, font in lines:
+                draw.text((left_x, y), text, fill=0, font=font)
+                y += int(30 * s)
+
+            draw.text((left_x, y + int(6 * s)), "IMEI    :", fill=0, font=font_mid)
+            draw.text((int(145 * s) + x_offset, y + int(6 * s)), imei_value, fill=0, font=font_imei)
+
+            # 右上品牌
+            draw.text((int(640 * s) + x_offset, int(16 * s) + y_offset), "vbot", fill=0, font=font_big)
+
+            # 右侧许可框
+            box_x, box_y, box_w, box_h = (
+                int(410 * s) + x_offset,
+                int(42 * s) + y_offset,
+                int(365 * s),
+                int(242 * s),
+            )
+            draw.rounded_rectangle(
+                (box_x, box_y, box_x + box_w, box_y + box_h),
+                radius=max(6, int(28 * s)),
+                outline=0,
+                width=max(1, int(4 * s)),
+            )
+            draw.line(
+                (box_x, box_y + int(160 * s), box_x + box_w, box_y + int(160 * s)),
+                fill=0,
+                width=max(1, int(4 * s)),
+            )
+            draw.text((int(452 * s) + x_offset, int(70 * s) + y_offset), "CMA 进网许可", fill=0, font=font_big)
+            draw.text((int(470 * s) + x_offset, int(132 * s) + y_offset), "VITAD011Vbot", fill=0, font=font_big)
+            draw.text((int(445 * s) + x_offset, int(242 * s) + y_offset), scramble, fill=0, font=font_big)
+
+            return self._image_to_zpl(img, threshold=threshold)
+
+    def _build_fields_only_zpl(
+        self,
+        params: Dict[str, Any],
+        imei_value: str,
+        scramble: str,
+        dpi: int,
+        x_offset: int,
+        y_offset: int,
+    ) -> str:
+        label_width_mm = float(params.get("label_width_mm", 104.0))
+        label_height_mm = float(params.get("label_height_mm", 31.0))
+        pw = self._mm_to_px(label_width_mm, dpi)
+        ll = self._mm_to_px(label_height_mm, dpi)
+
+        imei_x = int(params.get("imei_x_px", self._mm_to_px(float(params.get("imei_x_mm", 11.2)), dpi))) + x_offset
+        imei_y = int(params.get("imei_y_px", self._mm_to_px(float(params.get("imei_y_mm", 27.66)), dpi))) + y_offset
+        scramble_x = int(
+            params.get("scramble_x_px", self._mm_to_px(float(params.get("scramble_x_mm", 59.6)), dpi))
+        ) + x_offset
+        scramble_y = int(
+            params.get("scramble_y_px", self._mm_to_px(float(params.get("scramble_y_mm", 25.0)), dpi))
+        ) + y_offset
+
+        imei_h = int(params.get("imei_font_h_px", self._mm_to_px(float(params.get("imei_font_h_mm", 1.9)), dpi)))
+        imei_w = int(params.get("imei_font_w_px", self._mm_to_px(float(params.get("imei_font_w_mm", 1.3)), dpi)))
+        scramble_h = int(
+            params.get("scramble_font_h_px", self._mm_to_px(float(params.get("scramble_font_h_mm", 3.0)), dpi))
+        )
+        scramble_w = int(
+            params.get("scramble_font_w_px", self._mm_to_px(float(params.get("scramble_font_w_mm", 2.2)), dpi))
+        )
+        imei_prefix = str(params.get("imei_prefix", "") or "")
+        scramble_prefix = str(params.get("scramble_prefix", "  ") or "")
+
+        return (
+            "^XA\n"
+            f"^PW{pw}\n"
+            f"^LL{ll}\n"
+            "^CI28\n"
+            f"^FO{imei_x},{imei_y}^A0N,{imei_h},{imei_w}^FD{imei_prefix}{imei_value}^FS\n"
+            f"^FO{scramble_x},{scramble_y}^A0N,{scramble_h},{scramble_w}^FD{scramble_prefix}{scramble}^FS\n"
+            "^XZ"
+        )
+
+    def _build_fields_only_image_zpl(
+        self,
+        params: Dict[str, Any],
+        imei_value: str,
+        scramble: str,
+        dpi: int,
+        width: int,
+        height: int,
+        threshold: int,
+        x_offset: int,
+        y_offset: int,
+        imei_font_source: str,
+        text_font_source: str,
+    ) -> str:
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(f"缺少 Pillow 依赖，无法渲染标签图片: {e}") from e
+
+        with tempfile.TemporaryDirectory(prefix="zebra_fields_fonts_") as tmpdir:
+            tmp = Path(tmpdir)
+            imei_font_path = self._resolve_font_file(imei_font_source, tmp / "imei")
+            scramble_font_path = self._resolve_font_file(text_font_source, tmp / "text")
+
+            imei_font_px = int(params.get("imei_font_px", self._mm_to_px(float(params.get("imei_font_h_mm", 1.9)), dpi)))
+            scramble_font_px = int(
+                params.get("scramble_font_px", self._mm_to_px(float(params.get("scramble_font_h_mm", 3.0)), dpi))
+            )
+            imei_font = self._safe_truetype_for_text(ImageFont, imei_font_path, max(12, imei_font_px), "111111111111111")
+            scramble_font = self._safe_truetype(ImageFont, scramble_font_path, max(12, scramble_font_px))
+
+            imei_x = int(params.get("imei_x_px", self._mm_to_px(float(params.get("imei_x_mm", 11.2)), dpi))) + x_offset
+            imei_y = int(params.get("imei_y_px", self._mm_to_px(float(params.get("imei_y_mm", 27.66)), dpi))) + y_offset
+            scramble_x = int(
+                params.get("scramble_x_px", self._mm_to_px(float(params.get("scramble_x_mm", 59.6)), dpi))
+            ) + x_offset
+            scramble_y = int(
+                params.get("scramble_y_px", self._mm_to_px(float(params.get("scramble_y_mm", 25.0)), dpi))
+            ) + y_offset
+
+            img = Image.new("L", (width, height), 255)
+            draw = ImageDraw.Draw(img)
+            imei_prefix = str(params.get("imei_prefix", "") or "")
+            scramble_prefix = str(params.get("scramble_prefix", "  ") or "")
+            draw.text((imei_x, imei_y), f"{imei_prefix}{imei_value}", fill=0, font=imei_font)
+            draw.text((scramble_x, scramble_y), f"{scramble_prefix}{scramble}", fill=0, font=scramble_font)
+            return self._image_to_zpl(img, threshold=threshold)
+
+    @staticmethod
+    def _safe_truetype_for_text(image_font_mod: Any, font_path: Optional[Path], size: int, sample_text: str):
+        candidates: List[Optional[Path]] = [font_path]
+        win_fonts = [
+            Path("C:/Windows/Fonts/arial.ttf"),
+            Path("C:/Windows/Fonts/calibri.ttf"),
+            Path("C:/Windows/Fonts/tahoma.ttf"),
+        ]
+        candidates.extend(win_fonts)
+        for p in candidates:
+            if not p or not p.exists():
+                continue
+            try:
+                f = image_font_mod.truetype(str(p), size=size)
+                box = f.getbbox(sample_text)
+                if box and (box[2] - box[0]) > 0 and (box[3] - box[1]) > 0:
+                    return f
+            except Exception:  # noqa: BLE001
+                continue
+        return image_font_mod.load_default()
+
+    @staticmethod
+    def _mm_to_px(mm: float, dpi: int) -> int:
+        return int(round(mm * float(dpi) / 25.4))
+
+    @staticmethod
+    def _safe_truetype(image_font_mod: Any, font_path: Optional[Path], size: int):
+        if font_path and font_path.exists():
+            try:
+                return image_font_mod.truetype(str(font_path), size=size)
+            except Exception:  # noqa: BLE001
+                pass
+        return image_font_mod.load_default()
+
+    def _resolve_font_file(self, source: str, target_dir: Path) -> Optional[Path]:
+        src = Path(source)
+        if not source:
+            return None
+        if src.is_file() and src.suffix.lower() in {".ttf", ".otf"}:
+            return src
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        if src.is_file() and src.suffix.lower() == ".zip":
+            with zipfile.ZipFile(src, "r") as zf:
+                zf.extractall(target_dir)
+            return self._pick_first_font(target_dir)
+
+        if src.is_file() and src.suffix.lower() == ".rar":
+            seven_zip = shutil.which("7z")
+            if seven_zip:
+                cmd = [seven_zip, "x", str(src), f"-o{target_dir}", "-y"]
+            else:
+                unrar = self._find_unrar_executable()
+                if not unrar:
+                    raise RuntimeError("检测到 .rar 字体包，但系统未找到 7z/UnRAR，无法自动解压")
+                cmd = [unrar, "x", "-o+", str(src), str(target_dir)]
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            if proc.returncode != 0:
+                raise RuntimeError(f"解压字体包失败: {proc.stderr or proc.stdout}")
+            return self._pick_first_font(target_dir)
+
+        if src.is_dir():
+            return self._pick_first_font(src)
+
+        raise FileNotFoundError(f"字体来源不存在或不支持: {source}")
+
+    @staticmethod
+    def _pick_first_font(directory: Path) -> Optional[Path]:
+        fonts = sorted(directory.rglob("*.ttf")) + sorted(directory.rglob("*.otf"))
+        if not fonts:
+            return None
+        return fonts[0]
+
+    @staticmethod
+    def _find_unrar_executable() -> Optional[str]:
+        for name in ("unrar", "UnRAR", "WinRAR"):
+            path = shutil.which(name)
+            if path:
+                return path
+        candidates = [
+            Path("C:/Program Files/WinRAR/UnRAR.exe"),
+            Path("C:/Program Files/WinRAR/WinRAR.exe"),
+            Path("C:/Program Files (x86)/WinRAR/UnRAR.exe"),
+            Path("C:/Program Files (x86)/WinRAR/WinRAR.exe"),
+        ]
+        for p in candidates:
+            if p.exists():
+                return str(p)
+        return None
+
+    @staticmethod
+    def _image_to_zpl(img: Any, threshold: int = 165) -> str:
+        mono = img.convert("L").point(lambda x: 0 if x < threshold else 255, mode="1")
+        width, height = mono.size
+        bytes_per_row = (width + 7) // 8
+        total_bytes = bytes_per_row * height
+
+        raw = bytearray()
+        px = mono.load()
+        for y in range(height):
+            bit = 0
+            count = 0
+            for x in range(width):
+                bit = (bit << 1) | (0 if px[x, y] else 1)
+                count += 1
+                if count == 8:
+                    raw.append(bit & 0xFF)
+                    bit = 0
+                    count = 0
+            if count:
+                bit <<= (8 - count)
+                raw.append(bit & 0xFF)
+
+        hex_data = raw.hex().upper()
+        return "^XA\n^FO0,0\n^GFA,{tb},{tb},{bpr},{data}\n^XZ".format(
+            tb=total_bytes, bpr=bytes_per_row, data=hex_data
+        )
 
     @staticmethod
     def _resolve_var(name: str, ctx: Context, params: Dict[str, Any]) -> str:

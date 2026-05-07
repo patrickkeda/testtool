@@ -6,6 +6,7 @@
 from .registry import register
 from .steps.common.measure_current import MeasureCurrentStep
 from .steps.utility.delay import DelayStep
+from .steps.utility.ping_host import PingHostStep
 from .steps.utility.confirm import ConfirmStep
 from .steps.utility.generate_sn import GenerateSNStep
 from .steps.cases.boot_current import BootCurrentStep
@@ -45,6 +46,8 @@ from .steps.cases.create_device_json import CreateDeviceJsonStep
 from .steps.cases.compare_version import CompareVersionStep
 from .steps.cases.mes_steps import MESHeartbeatStep, MESGetWorkOrderStep, MESUploadResultStep
 from .steps.cases.zebra_printer import ZebraPrintStep, ZebraImagePrintStep
+from .steps.cases.ssh_exec import SshExecStep
+from .steps.cases.mic_record_test import MicRecordSshStep
 
 
 def register_all_steps():
@@ -91,6 +94,24 @@ def register_all_steps():
         step_type="utility.delay",
         step_class=DelayStep,
         aliases=["delay", "wait", "sleep"]
+    )
+
+    register(
+        step_type="utility.ping_host",
+        step_class=PingHostStep,
+        aliases=["ping", "ping_host", "utility.ping"],
+    )
+
+    register(
+        step_type="utility.ssh_exec",
+        step_class=SshExecStep,
+        aliases=["ssh.exec", "ssh_exec", "ssh_command"],
+    )
+
+    register(
+        step_type="case.mic_record_ssh",
+        step_class=MicRecordSshStep,
+        aliases=["mic_record", "x5_mic_test", "ssh.mic_record", "case.x5_audio_record"],
     )
     
     register(

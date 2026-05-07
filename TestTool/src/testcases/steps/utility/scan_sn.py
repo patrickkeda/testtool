@@ -109,9 +109,10 @@ class ScanSNStep(BaseStep):
         instruction = self.get_param_str(params, "instruction", "请扫描或手动输入产品序列号")
         validate_regex = self.get_param_str(params, "validate_regex", "")
         timeout_seconds = self.get_param_int(params, "timeout_seconds", 60)
-        
+        force_english_keyboard = self.get_param_bool(params, "force_english_keyboard", True)
+
         ctx.log_info("开始扫描序列号")
-        
+
         try:
             # 在主线程阻塞显示对话框
             from src.app.ui_invoker import invoke_in_gui_show_scan_sn
@@ -120,6 +121,8 @@ class ScanSNStep(BaseStep):
                 hint=instruction,
                 regex=validate_regex or "^[A-Za-z0-9_-]{1,64}$",
                 timeout_ms=timeout_seconds * 1000 if timeout_seconds > 0 else 0,
+                port=ctx.port,
+                force_english_keyboard=force_english_keyboard,
             )
             
             if accepted:

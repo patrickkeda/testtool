@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QLabel,
+    QFileDialog,
     QLineEdit,
     QComboBox,
     QSpinBox,
@@ -500,6 +501,49 @@ class _PortPage(QWidget):
         main_layout.addWidget(scroll_area)
 
 
+class _SshSettingsPage(QWidget):
+    """应用级 SSH 私钥路径，供未单独指定 private_key_file 的步骤使用。"""
+
+    def __init__(self, translate_fn, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._t = translate_fn
+        layout = QVBoxLayout(self)
+        self.grp = QGroupBox(self._t("config.ssh.group"), self)
+        form = QFormLayout(self.grp)
+        self.ed_private_key = QLineEdit(self)
+        self.ed_private_key.setPlaceholderText("C:/Users/.../.ssh/id_ed25519")
+        row = QHBoxLayout()
+        row.addWidget(self.ed_private_key, stretch=1)
+        self.btn_browse = QPushButton(self._t("config.ssh.browse"))
+        self.btn_browse.clicked.connect(self._on_browse)
+        row.addWidget(self.btn_browse)
+        wrap = QWidget(self)
+        wrap.setLayout(row)
+        self._lbl_private_key = QLabel(self._t("config.ssh.private_key"), self)
+        form.addRow(self._lbl_private_key, wrap)
+        self.lbl_hint = QLabel(self._t("config.ssh.hint"), self)
+        self.lbl_hint.setWordWrap(True)
+        form.addRow(self.lbl_hint)
+        layout.addWidget(self.grp)
+        layout.addStretch(1)
+
+    def _on_browse(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            self._t("config.ssh.private_key"),
+            self.ed_private_key.text() or "",
+            "All (*);;PEM/KEY (*.pem *.key)",
+        )
+        if path:
+            self.ed_private_key.setText(path)
+
+    def apply_retranslate(self) -> None:
+        self.grp.setTitle(self._t("config.ssh.group"))
+        self._lbl_private_key.setText(self._t("config.ssh.private_key"))
+        self.btn_browse.setText(self._t("config.ssh.browse"))
+        self.lbl_hint.setText(self._t("config.ssh.hint"))
+
+
 class ConfigDialog(QDialog):
     def __init__(self, parent: Optional[QWidget] = None, *, translator=None, service=None) -> None:
         super().__init__(parent)
@@ -543,6 +587,8 @@ class ConfigDialog(QDialog):
         self.page_b = _PortPage(self._t("config.portB"), self)
         self.tabs.addTab(self.page_a, self._t("config.portA"))
         self.tabs.addTab(self.page_b, self._t("config.portB"))
+        self.page_ssh = _SshSettingsPage(self._t, self)
+        self.tabs.addTab(self.page_ssh, self._t("config.tab.ssh"))
         layout.addWidget(self.tabs)
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
         self.buttons.accepted.connect(self._on_ok)
@@ -660,6 +706,8 @@ class ConfigDialog(QDialog):
         self.act_validate.setText(self._t("config.btn.validate"))
         self.tabs.setTabText(0, self._t("config.portA"))
         self.tabs.setTabText(1, self._t("config.portB"))
+        self.tabs.setTabText(2, self._t("config.tab.ssh"))
+        self.page_ssh.apply_retranslate()
 
     # ---- service wiring --------------------------------------------------
     def _load_to_ui(self) -> None:
@@ -675,6 +723,14 @@ class ConfigDialog(QDialog):
         
         # 加载PortB配置
         self._load_port_config(self.page_b, cfg.ports.portB)
+
+        ssh_cfg = getattr(cfg, "ssh", None)
+        if ssh_cfg is not None:
+            self.page_ssh.ed_private_key.setText(
+                getattr(ssh_cfg, "private_key_path", "") or ""
+            )
+        else:
+            self.page_ssh.ed_private_key.clear()
     
     def _load_port_config(self, page, port_cfg) -> None:
         """加载单个端口的配置"""
@@ -754,6 +810,9 @@ class ConfigDialog(QDialog):
         
         # 收集PortB配置
         self._collect_port_config(self.page_b, cfg.ports.portB)
+
+        if getattr(cfg, "ssh", None) is not None:
+            cfg.ssh.private_key_path = self.page_ssh.ed_private_key.text().strip()
         
         self._service._config = cfg
 
@@ -823,7 +882,7 @@ class ConfigDialog(QDialog):
         try:
             self._collect_from_ui()
             self._service.save()
-            QMessageBox.information(self, "保存成功", "端口配置已保存")
+            QMessageBox.information(self, "保存成功", "配置已保存")
             self.accept()
         except Exception as e:  # noqa: BLE001
             QMessageBox.critical(self, "保存失败", f"保存配置时出错: {e}")
@@ -870,6 +929,9 @@ class ConfigDialog(QDialog):
         self.page_b.grp_tcp.sp_port.setValue(5020)
         self.page_b.grp_tcp.ed_timeout.setText("2000")
         self.page_b.grp_tcp.sp_retries.setValue(3)
+
+        if hasattr(self, "page_ssh"):
+            self.page_ssh.ed_private_key.clear()
         
         # 显示成功消息
         QMessageBox.information(self, "重置完成", "所有配置已重置为默认值")

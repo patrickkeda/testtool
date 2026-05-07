@@ -8,7 +8,7 @@
 """
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox, QApplication
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QShowEvent
 from ...base import BaseStep, StepResult
 from ...context import Context
 from ...libs.common.validators import validate_sn_format
@@ -26,7 +26,8 @@ class ScanSNDialog(QDialog):
     sn_entered = Signal(str)  # SN输入完成信号
     
     def __init__(self, parent=None, title="扫描/输入产品SN", hint="请用扫码枪扫描或手动输入后回车",
-                 regex="^[A-Z0-9_-]{6,64}$", timeout_ms=60000, port="PortA", main_window=None):
+                 regex="^[A-Z0-9_-]{6,64}$", timeout_ms=60000, port="PortA", main_window=None,
+                 force_english_keyboard: bool = True):
         super().__init__(parent)
         self.title = title
         self.hint = hint
@@ -35,6 +36,7 @@ class ScanSNDialog(QDialog):
         self.port = port
         self.main_window = main_window
         self.sn_result = None
+        self._force_english_keyboard = bool(force_english_keyboard)
 
         # 设置窗口标题，明确标明端口
         self.setWindowTitle(f"{title} - {port}")
@@ -98,9 +100,16 @@ class ScanSNDialog(QDialog):
         layout.addWidget(self.status_label)
         
         self.setLayout(layout)
-        
-        # 设置焦点到输入框：仅做 Qt 本地焦点处理，不再调用系统级输入法切换，
-        # 避免在部分部署电脑上触发整机消息循环卡顿。
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        if self._force_english_keyboard:
+            try:
+                from ...libs.common.input_locale import activate_english_keyboard_layout
+
+                activate_english_keyboard_layout()
+            except Exception:
+                pass
         QTimer.singleShot(0, self._focus_input)
 
     def _focus_input(self):
@@ -281,6 +290,7 @@ class ScanSNStep(BaseStep):
         - regex: 验证正则表达式 (默认 "^[A-Z0-9_-]{6,64}$")
         - timeout_ms: 超时时间(毫秒) (默认 60000)
         - allow_manual: 是否允许手动输入 (默认 True)
+        - force_english_keyboard: 弹出对话框时是否尝试切换到英文键盘布局（仅 Windows，默认 True）
         """
         try:
             # 1) 读取参数
@@ -289,7 +299,8 @@ class ScanSNStep(BaseStep):
             regex = params.get("regex", "^[A-Z0-9_-]{6,64}$")
             timeout_ms = int(params.get("timeout_ms", 60000))
             allow_manual = bool(params.get("allow_manual", True))
-            
+            force_english_keyboard = self.get_param_bool(params, "force_english_keyboard", True)
+
             ctx.log_info(f"开始SN扫描测试: 标题='{dialog_title}', 超时={timeout_ms}ms")
             
             # 2) 在主线程阻塞显示对话框
@@ -318,6 +329,7 @@ class ScanSNStep(BaseStep):
                 timeout_ms=timeout_ms,
                 port=ctx.port,
                 main_window=main_window,
+                force_english_keyboard=force_english_keyboard,
             )
             
             if accepted:

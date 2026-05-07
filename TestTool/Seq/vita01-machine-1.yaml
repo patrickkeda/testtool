@@ -305,9 +305,26 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
+  # Step 11: 电池检测
+  - id: step_12
+    name: GNSSTest
+    type: engineer.test
+    params:
+      command: 'battery=1,45,50%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
 
   # Step 12: 弹窗 - 请将网线拔掉，并等待机器狗行走
-  - id: step_12
+  - id: step_13
     name: UnplugNetworkConfirm
     type: utility.confirm
     params:
@@ -325,7 +342,7 @@ steps:
     manual_judgment_config: null
 
   # Step 13: 站起来
-  - id: step_13
+  - id: step_14
     name: StandUp
     type: engineer.test
     params:
@@ -395,7 +412,7 @@ steps:
   #   manual_judgment_config: null
 
   # Step 14: 拍摄一张 ircamera 的图片
-  - id: step_14
+  - id: step_15
     name: IRCameraCapture
     type: engineer.test
     params:
@@ -449,7 +466,7 @@ steps:
   #   manual_judgment_config: null
 
   # Step 15: 上传标定数据到电脑
-  - id: step_15
+  - id: step_16
     name: UploadCalibData
     type: engineer.test
     params:
@@ -464,7 +481,7 @@ steps:
     on_failure: fail
 
   # 步骤16: 休息 3 秒
-  - id: step_16
+  - id: step_17
     name: WaitAfterPowerOn
     type: utility.delay
     params:
@@ -479,7 +496,7 @@ steps:
     manual_judgment_config: null
 
   # Step 17: Efuse 写入 SN
-  - id: step_17
+  - id: step_18
     name: EfuseSN
     type: engineer.test
     params:
@@ -497,7 +514,7 @@ steps:
     manual_judgment_config: null
 
   # Step 18:offline
-  - id: step_18
+  - id: step_19
     name: offline
     type: engineer.test
     params:
@@ -515,7 +532,7 @@ steps:
     manual_judgment_config: null
 
   # Step 19: Efuse 写入 SN
-  - id: step_19
+  - id: step_20
     name: EfuseSN
     type: engineer.test
     params:
@@ -548,7 +565,7 @@ steps:
   #   manual_judgment_config: null
 
   # Step 20: 站立
-  - id: step_20
+  - id: step_21
     name: StandUp
     type: engineer.test
     params:
@@ -566,7 +583,7 @@ steps:
     manual_judgment_config: null
 
   # Step 21: 延时 100 秒
-  - id: step_21
+  - id: step_22
     name: DelayAfterPowerOn
     type: utility.delay
     params:
@@ -581,7 +598,7 @@ steps:
     manual_judgment_config: null
 
   # Step 13: stage2设置为1 (stage=1,6,1%)
-  - id: step_13
+  - id: step_23
     name: ConfirmFusionFlag
     type: engineer.test
     params:
@@ -597,7 +614,7 @@ steps:
     on_failure: fail
 
   # Step 22: 下电
-  - id: step_22
+  - id: step_24
     name: PowerOff
     type: engineer.test
     params:

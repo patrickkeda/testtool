@@ -222,6 +222,15 @@ class PortsConfig(BaseModel):
     portB: PortConfig = Field(default_factory=PortConfig)
 
 
+class SshConfig(BaseModel):
+    """全局 SSH 客户端默认项（跳板执行、远程命令等步骤可复用）。"""
+
+    private_key_path: str = Field(
+        "",
+        description="默认私钥文件路径；步骤未指定 private_key_file 且未用环境变量/密码时使用",
+    )
+
+
 class PrinterConfig(BaseModel):
     enabled: bool = Field(True, description="是否启用打印机")
     channel: str = Field("tcp", description="打印通道: tcp/local")
@@ -251,6 +260,7 @@ class RootConfig(BaseModel):
     app: AppConfig = Field(default_factory=AppConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     ports: PortsConfig = Field(default_factory=PortsConfig)
+    ssh: SshConfig = Field(default_factory=SshConfig)
     mes: MesConfig = Field(default_factory=MesConfig)
     printer: PrinterConfig = Field(default_factory=PrinterConfig)
     versions: VersionConfig = Field(default_factory=VersionConfig)

@@ -21,6 +21,7 @@ from ..testcases.context import Context
 from ..testcases.registry import create_step
 from ..testcases.base import StepResult
 from ..testcases.simple_config import TestSequenceConfig
+from ..testcases.utils import resolve_placeholders_in_params
 
 # #region agent log
 try:
@@ -234,11 +235,14 @@ class PortWorker(QObject):
             
             try:
                 # 创建步骤实例
+                _st_timeout = getattr(step_config, "timeout", None)
+                if _st_timeout is None:
+                    _st_timeout = 30
                 step_instance = create_step(
                     step_type=step_config.type,
                     step_id=step_config.id,
                     step_name=step_config.name,
-                    timeout=step_config.timeout,
+                    timeout=_st_timeout,
                     retries=step_config.retries,
                     on_failure=step_config.on_failure
                 )
@@ -248,8 +252,11 @@ class PortWorker(QObject):
                     self.sig_step.emit(step_config.id, "Fail")
                     continue
                 
-                # 执行步骤
-                result = step_instance.run(self.context, step_config.params)
+                # 执行步骤（${var} 与序列 variables / 上下文对齐）
+                _params = resolve_placeholders_in_params(
+                    dict(step_config.params or {}), self.context
+                )
+                result = step_instance.run(self.context, _params)
 
                 # #region agent log
                 try:
@@ -321,6 +328,12 @@ class PortWorker(QObject):
                     self._logger.warning(
                         f"步骤 {step_config.id}（第 {idx}/{n} 步）: {step_config.name} - 失败: {result.message}"
                     )
+                    err_detail = getattr(result, "error", None) or ""
+                    if err_detail:
+                        self._logger.warning("  失败详情: %s", err_detail)
+                    ec = getattr(result, "error_code", None)
+                    if ec:
+                        self._logger.warning("  错误代码: %s", ec)
                     self.sig_step.emit(step_config.id, "Fail")
 
                     # 根据测试模式 + 步骤失败策略决定后续行为

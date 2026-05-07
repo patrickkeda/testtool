@@ -341,15 +341,11 @@ class MainWindow(QMainWindow):
         self.port_a.sig_pause.connect(lambda: self._pause_port("A"))
         self.port_a.sig_stop.connect(lambda: self._stop_port("A"))
         self.port_a.sig_mode_changed.connect(lambda mode: self._on_port_mode_changed("A", mode))
-        if hasattr(self.port_a, "sig_retest"):
-            self.port_a.sig_retest.connect(lambda: self._retest_port("A"))
         
         self.port_b.sig_start.connect(lambda: self._start_port("B"))
         self.port_b.sig_pause.connect(lambda: self._pause_port("B"))
         self.port_b.sig_stop.connect(lambda: self._stop_port("B"))
         self.port_b.sig_mode_changed.connect(lambda mode: self._on_port_mode_changed("B", mode))
-        if hasattr(self.port_b, "sig_retest"):
-            self.port_b.sig_retest.connect(lambda: self._retest_port("B"))
         
         port_splitter.addWidget(self.port_a)
         port_splitter.addWidget(self.port_b)
@@ -895,6 +891,19 @@ class MainWindow(QMainWindow):
             port_config_dict = port_config.model_dump(exclude_none=True)
             context.set_port_config(port_config_dict)
 
+            ssh_cfg = getattr(config, "ssh", None)
+            pk_path = (
+                getattr(ssh_cfg, "private_key_path", "") if ssh_cfg is not None else ""
+            )
+            if isinstance(pk_path, str) and pk_path.strip():
+                context.set_data("ssh_private_key_path", pk_path.strip())
+            else:
+                self.alerts.appendPlainText(
+                    f"[{port}] 提示: 配置中 ssh.private_key_path 为空；"
+                    f"utility.ssh_exec / mic_record_ssh 需在步骤里填写 private_key_file、"
+                    f"password 或 private_key_env，否则报「未配置认证方式」。"
+                )
+
             # 将端口配置中与 PLC / 治具相关的串口参数注入到 Context.state，
             # 供 plc.modbus.* 步骤直接使用（避免每次都手动改 YAML）
             try:
@@ -980,6 +989,11 @@ class MainWindow(QMainWindow):
             context = self._create_test_context("PortA")
             if context:
                 self._worker_a.set_context(context)
+            else:
+                self.alerts.appendPlainText(
+                    "[PortA] 警告: 测试上下文创建失败，Worker 使用默认 Context；"
+                    "utility.ssh_exec 等步骤将无法使用配置中的 SSH 私钥路径。"
+                )
             # 设置测试模式（从PortPanel获取）
             test_mode = self.port_a.get_test_mode()
             self._worker_a.set_test_mode(test_mode)
@@ -1023,6 +1037,11 @@ class MainWindow(QMainWindow):
             context = self._create_test_context("PortB")
             if context:
                 self._worker_b.set_context(context)
+            else:
+                self.alerts.appendPlainText(
+                    "[PortB] 警告: 测试上下文创建失败，Worker 使用默认 Context；"
+                    "utility.ssh_exec 等步骤将无法使用配置中的 SSH 私钥路径。"
+                )
             # 设置测试模式（从PortPanel获取）
             test_mode = self.port_b.get_test_mode()
             self._worker_b.set_test_mode(test_mode)
@@ -1138,6 +1157,15 @@ class MainWindow(QMainWindow):
             if error_code:
                 value = error_code
                 unit = ""  # 错误代码不使用单位
+
+            msg = getattr(result, "message", "") or ""
+            err = getattr(result, "error", "") or ""
+            detail = f"[PortA] 步骤失败 «{display_name}»: {msg}"
+            if err:
+                detail += f" | 详情: {err}"
+            if error_code:
+                detail += f" | 代码: {error_code}"
+            self.alerts.appendPlainText(detail)
         
         # 添加到测试结果表格
         self.port_a.add_test_result(
@@ -1196,6 +1224,15 @@ class MainWindow(QMainWindow):
             if error_code:
                 value = error_code
                 unit = ""  # 错误代码不使用单位
+
+            msg = getattr(result, "message", "") or ""
+            err = getattr(result, "error", "") or ""
+            detail = f"[PortB] 步骤失败 «{display_name}»: {msg}"
+            if err:
+                detail += f" | 详情: {err}"
+            if error_code:
+                detail += f" | 代码: {error_code}"
+            self.alerts.appendPlainText(detail)
         
         # 添加到测试结果表格
         self.port_b.add_test_result(
@@ -1905,32 +1942,6 @@ class MainWindow(QMainWindow):
         
         # 重新启动端口
         self._start_port_with_sequence(port, self._current_sequence)
-
-    def _retest_port(self, port: str) -> None:
-        """复测指定端口：跳过SN扫描，使用上一轮SN重新执行当前序列。"""
-        print(f"DEBUG: 复测端口 {port}")
-        if not self._current_sequence:
-            QMessageBox.warning(self, "警告", "请先加载测试序列")
-            return
-        
-        full_port_name = f"Port{port}" if len(port) == 1 else port
-        last_sn = self._sn_by_port.get(full_port_name, "NULL")
-        if not last_sn or last_sn == "NULL":
-            QMessageBox.information(self, "提示", f"{full_port_name} 当前没有上一轮SN，无法复测")
-            return
-
-        # 端口正在运行时不允许复测
-        if port == "A":
-            if hasattr(self, "_worker_a") and self._worker_a and self._worker_a.is_running():
-                QMessageBox.information(self, "提示", "Port A 正在运行，无法复测")
-                return
-        elif port == "B":
-            if hasattr(self, "_worker_b") and self._worker_b and self._worker_b.is_running():
-                QMessageBox.information(self, "提示", "Port B 正在运行，无法复测")
-                return
-
-        # 复测时，直接从序列起始步骤开始，但在Worker中跳过SN扫描步骤
-        self._start_port_with_sequence(port, self._current_sequence, retest=True)
     
     def _add_test_result(self, port: str, step_name: str, result: str, value: str = "", low: str = "", high: str = "", unit: str = "") -> None:
         """添加测试结果到PortPanel的结果表"""
