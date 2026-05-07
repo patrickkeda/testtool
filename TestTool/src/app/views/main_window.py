@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QTableWidgetItem,
     QPlainTextEdit,
+    QDialog,
 )
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -35,6 +36,7 @@ from urllib.error import HTTPError, URLError
 
 from .port_panel import PortPanel
 from .config_dialog import ConfigDialog
+from .step_properties_dialog import StepPropertiesDialog
 from ..i18n import I18n
 from ..log_bridge import QtLogSignalHandler
 from ..sequence_model import SequenceTreeModel
@@ -136,9 +138,14 @@ class MainWindow(QMainWindow):
         
         # 当前测试序列
         self._current_sequence = None
-        
+        # 当前序列磁盘路径（用于步骤属性里「保存到 YAML」）
+        self._current_sequence_file: Optional[str] = None
+
         # SN管理
         self._sn_by_port: Dict[str, str] = {"PortA": "NULL", "PortB": "NULL"}
+        # 端口状态机英文内部值（Idle/Running/Pass/…），界面文案由 i18n 渲染
+        self._status_inner_by_port: Dict[str, str] = {"A": "Idle", "B": "Idle"}
+        self._seq_status_display_name: Optional[str] = None
 
         # 初始化新架构
         self._init_new_architecture()
@@ -175,40 +182,42 @@ class MainWindow(QMainWindow):
         menubar = self.menuBar()
         
         # File menu
-        file_menu = menubar.addMenu(self._i18n.t("menu.file"))
-        file_menu.addAction("Load Seq", self._load_test_sequence)
-        file_menu.addSeparator()
-        exit_action = file_menu.addAction(self._i18n.t("menu.file.exit"))
+        self._file_menu = menubar.addMenu(self._i18n.t("menu.file"))
+        self._act_load_seq = QAction(self._i18n.t("menu.file.load_seq"), self)
+        self._act_load_seq.triggered.connect(self._load_test_sequence)
+        self._file_menu.addAction(self._act_load_seq)
+        self._file_menu.addSeparator()
+        exit_action = self._file_menu.addAction(self._i18n.t("menu.file.exit"))
         exit_action.triggered.connect(self._on_exit)
 
         # Config menu
-        config_menu = menubar.addMenu(self._i18n.t("menu.config"))
-        mes_action = config_menu.addAction(self._i18n.t("menu.config.mes"))
+        self._config_menu = menubar.addMenu(self._i18n.t("menu.config"))
+        mes_action = self._config_menu.addAction(self._i18n.t("menu.config.mes"))
         mes_action.triggered.connect(self._on_open_mes_config)
-        version_action = config_menu.addAction(self._i18n.t("menu.config.version"))
+        version_action = self._config_menu.addAction(self._i18n.t("menu.config.version"))
         version_action.triggered.connect(self._on_open_version_config)
-        ports_action = config_menu.addAction(self._i18n.t("menu.config.ports"))
+        ports_action = self._config_menu.addAction(self._i18n.t("menu.config.ports"))
         ports_action.triggered.connect(self._on_open_ports_config)
 
         # Help menu (语言/版本)
-        help_menu = menubar.addMenu("帮助")
-        act_cn = help_menu.addAction("中文")
-        act_en = help_menu.addAction("English")
-        act_ver = help_menu.addAction("版本")
-        act_cn.triggered.connect(lambda: self._on_switch_language("zh_CN"))
-        act_en.triggered.connect(lambda: self._on_switch_language("en_US"))
-        act_ver.triggered.connect(self._on_show_version)
+        self._help_menu = menubar.addMenu(self._i18n.t("menu.help"))
+        self._act_help_zh = self._help_menu.addAction(self._i18n.t("menu.language.chinese"))
+        self._act_help_en = self._help_menu.addAction(self._i18n.t("menu.language.english"))
+        self._act_help_ver = self._help_menu.addAction(self._i18n.t("menu.help.version"))
+        self._act_help_zh.triggered.connect(lambda: self._on_switch_language("zh_CN"))
+        self._act_help_en.triggered.connect(lambda: self._on_switch_language("en_US"))
+        self._act_help_ver.triggered.connect(self._on_show_version)
         
         # Tools menu
-        tools_menu = menubar.addMenu("工具")
-        tools_menu.addAction("序列编辑器", self._open_sequence_editor)
-        tools_menu.addAction("步骤库管理", self._open_step_library)
-        tools_menu.addSeparator()
-        self.act_show_port_b = QAction("显示 Port B", self)
+        self._tools_menu = menubar.addMenu(self._i18n.t("menu.tools"))
+        self._tools_menu.addAction(self._i18n.t("menu.tools.seq_editor"), self._open_sequence_editor)
+        self._tools_menu.addAction(self._i18n.t("menu.tools.step_library"), self._open_step_library)
+        self._tools_menu.addSeparator()
+        self.act_show_port_b = QAction(self._i18n.t("menu.tools.show_port_b"), self)
         self.act_show_port_b.setCheckable(True)
         self.act_show_port_b.setChecked(False)
         self.act_show_port_b.triggered.connect(self._on_toggle_port_b)
-        tools_menu.addAction(self.act_show_port_b)
+        self._tools_menu.addAction(self.act_show_port_b)
         
         # Note: Log level selector will be added to toolbar
 
@@ -226,7 +235,7 @@ class MainWindow(QMainWindow):
         # Other actions
         self.act_lang_zh = QAction(self._i18n.t("toolbar.lang.zh"), self)
         self.act_lang_en = QAction(self._i18n.t("toolbar.lang.en"), self)
-        self.act_config = QAction("Config", self)
+        self.act_config = QAction(self._i18n.t("toolbar.config"), self)
 
         self.act_start.triggered.connect(self.sig_start.emit)
         self.act_pause.triggered.connect(self.sig_pause.emit)
@@ -257,19 +266,19 @@ class MainWindow(QMainWindow):
         # Add log level selector to toolbar with expanded spacing
         toolbar.addWidget(self._create_spacer(40))  # 扩大两倍间距 (20 * 2)
         
-        log_label = QLabel("日志级别:", self)
+        self._log_level_label = QLabel(f"{self._i18n.t('toolbar.log_level')}:", self)
         self.cbo_log_level = QComboBox(self)
         self.cbo_log_level.addItems(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
         self.cbo_log_level.setCurrentText("INFO")
         self.cbo_log_level.currentTextChanged.connect(self._on_log_level_changed)
         
         # Set consistent size and spacing
-        log_label.setFixedHeight(32)  # Match button height
-        log_label.setAlignment(Qt.AlignCenter)  # Center align text
+        self._log_level_label.setFixedHeight(32)  # Match button height
+        self._log_level_label.setAlignment(Qt.AlignCenter)  # Center align text
         self.cbo_log_level.setFixedHeight(32)  # Match button height
         self.cbo_log_level.setMinimumWidth(100)  # Set minimum width
         
-        toolbar.addWidget(log_label)
+        toolbar.addWidget(self._log_level_label)
         toolbar.addWidget(self.cbo_log_level)
         
         # Add flexible spacer to push status info to the right
@@ -281,9 +290,9 @@ class MainWindow(QMainWindow):
         # Add status information to toolbar (comm, mes, log) - positioned at far right
         from PySide6.QtWidgets import QLabel
         
-        self.lbl_comm = QLabel("Comm: -", self)
-        self.lbl_mes = QLabel("MES: -", self)
-        self.lbl_log = QLabel("Log: -", self)
+        self.lbl_comm = QLabel(f"{self._i18n.t('toolbar.comm')}: -", self)
+        self.lbl_mes = QLabel(f"{self._i18n.t('toolbar.mes_prefix')}: -", self)
+        self.lbl_log = QLabel(f"{self._i18n.t('toolbar.log_short')}: -", self)
         
         # Set consistent styling for status labels
         self.lbl_comm.setFixedHeight(32)
@@ -324,17 +333,19 @@ class MainWindow(QMainWindow):
         self.sequence_tree.setHeaderLabels([
             self._i18n.t("seq.header.step"),
             self._i18n.t("seq.header.status"),
+            self._i18n.t("seq.header.retries"),
         ])
         # 启用右键菜单
         self.sequence_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.sequence_tree.customContextMenuRequested.connect(self._show_sequence_context_menu)
+        self.sequence_tree.itemDoubleClicked.connect(self._on_sequence_item_double_clicked)
         # 不添加占位符数据，让_load_default_sequence处理
 
         # Right: splitter with two port panels
         port_splitter = QSplitter(Qt.Horizontal, central)
         self._port_splitter = port_splitter
-        self.port_a = PortPanel(title="Port A", parent=port_splitter)
-        self.port_b = PortPanel(title="Port B", parent=port_splitter)
+        self.port_a = PortPanel(title=self._i18n.t("panel.title_a"), parent=port_splitter)
+        self.port_b = PortPanel(title=self._i18n.t("panel.title_b"), parent=port_splitter)
         
         # 连接Port Panel的信号
         self.port_a.sig_start.connect(lambda: self._start_port("A"))
@@ -434,12 +445,14 @@ class MainWindow(QMainWindow):
     def _init_statusbar(self) -> None:
         """初始化状态栏"""
         # 创建状态标签
-        self.status_label = QLabel("就绪")
+        self.status_label = QLabel(self._i18n.t("status.main.ready"))
         self.statusBar().addWidget(self.status_label)
         
         # 添加其他状态信息
-        self.connection_label = QLabel("连接: 未连接")
-        self.mes_label = QLabel("MES: 未连接")
+        self.connection_label = QLabel(
+            f"{self._i18n.t('status.conn_prefix')}: {self._i18n.t('status.conn.off')}"
+        )
+        self.mes_label = QLabel(self._i18n.t("mes.bar.disconnected"))
         self.statusBar().addPermanentWidget(self.connection_label)
         self.statusBar().addPermanentWidget(self.mes_label)
         self.mes_label.setStyleSheet("font-weight: 700; color: #b00020;")
@@ -457,12 +470,12 @@ class MainWindow(QMainWindow):
 
     def _set_mes_status_labels(self, connected: bool, detail: str = "") -> None:
         if connected:
-            toolbar_text = "MES: ● 已连接"
-            bar_text = "MES: 已连接"
+            toolbar_text = self._i18n.t("mes.toolbar.connected")
+            bar_text = self._i18n.t("mes.bar.connected")
             color = "#0a7f2e"
         else:
-            toolbar_text = "MES: ● 未连接"
-            bar_text = "MES: 未连接"
+            toolbar_text = self._i18n.t("mes.toolbar.disconnected")
+            bar_text = self._i18n.t("mes.bar.disconnected")
             color = "#b00020"
 
         if detail:
@@ -479,15 +492,15 @@ class MainWindow(QMainWindow):
             config = self._config_service.load()
             mes_cfg = getattr(config, "mes", None)
             if not mes_cfg or not getattr(mes_cfg, "enabled", False):
-                return False, "未启用"
+                return False, self._i18n.t("mes.reason.disabled")
 
             base_url = str(getattr(mes_cfg, "base_url", "") or "").strip()
             if not base_url:
-                return False, "未配置URL"
+                return False, self._i18n.t("mes.reason.no_url")
 
             parsed = urlparse(base_url)
             if not parsed.scheme or not parsed.netloc:
-                return False, "URL非法"
+                return False, self._i18n.t("mes.reason.bad_url")
 
             req = Request(base_url, method="HEAD")
             with urlopen(req, timeout=1.5) as response:
@@ -548,7 +561,51 @@ class MainWindow(QMainWindow):
             version = pkg_resources.get_distribution("TestTool").version
         except Exception:
             version = "1.0.0"
-        QMessageBox.information(self, "版本", f"TestTool 版本: {version}")
+        QMessageBox.information(
+            self,
+            self._i18n.t("dialog.version_title"),
+            self._i18n.t("msg.version_body").format(v=version),
+        )
+
+    def _tr_run_machine_status(self, s: str) -> str:
+        key_map = {
+            "Idle": "run.port_status.idle",
+            "Preparing": "run.port_status.preparing",
+            "Running": "run.port_status.running",
+            "Paused": "run.port_status.paused",
+            "Completed": "run.port_status.completed",
+            "Alarm": "run.port_status.alarm",
+            "Pass": "run.port_result.pass",
+            "Fail": "run.port_result.fail",
+            "Skipped": "run.step.skipped",
+        }
+        k = key_map.get(s)
+        return self._i18n.t(k) if k else s
+
+    def _set_port_machine_status(self, port: str, inner: str) -> None:
+        self._status_inner_by_port[port] = inner
+        panel = self.port_a if port == "A" else self.port_b
+        panel.lbl_status.setText(
+            f"{self._i18n.t('panel.status')}: {self._tr_run_machine_status(inner)}"
+        )
+
+    def _refresh_port_status_labels(self) -> None:
+        for port in ("A", "B"):
+            inner = self._status_inner_by_port.get(port, "Idle")
+            self._set_port_machine_status(port, inner)
+
+    def _fmt_expect(self, value: str) -> str:
+        return f"{self._i18n.t('panel.expect')}: {value}"
+
+    def _fmt_meas(self, value: str) -> str:
+        return f"{self._i18n.t('panel.meas')}: {value}"
+
+    def _fmt_retries(self, n: int) -> str:
+        return f"{self._i18n.t('panel.retries')}: {n}"
+
+    def _set_port_sn_label(self, panel: PortPanel, sn_value: str) -> None:
+        panel._sn_value = sn_value
+        panel.lbl_sn.setText(f"{self._i18n.t('panel.sn')}: {sn_value}")
 
     def _retranslate(self) -> None:
         # window and toolbar
@@ -558,11 +615,40 @@ class MainWindow(QMainWindow):
         self.act_stop.setText(self._i18n.t("toolbar.stop"))
         self.act_lang_zh.setText(self._i18n.t("toolbar.lang.zh"))
         self.act_lang_en.setText(self._i18n.t("toolbar.lang.en"))
+        self.act_config.setText(self._i18n.t("toolbar.config"))
+        self._log_level_label.setText(f"{self._i18n.t('toolbar.log_level')}:")
+        self.lbl_comm.setText(f"{self._i18n.t('toolbar.comm')}: -")
+        self.lbl_log.setText(f"{self._i18n.t('toolbar.log_short')}: -")
+        # MES 标签由定时器刷新；切换语言后立即按当前状态重刷一次
+        self._refresh_mes_status()
+
+        self._file_menu.setTitle(self._i18n.t("menu.file"))
+        self._act_load_seq.setText(self._i18n.t("menu.file.load_seq"))
+        self._config_menu.setTitle(self._i18n.t("menu.config"))
+        self._help_menu.setTitle(self._i18n.t("menu.help"))
+        self._act_help_zh.setText(self._i18n.t("menu.language.chinese"))
+        self._act_help_en.setText(self._i18n.t("menu.language.english"))
+        self._act_help_ver.setText(self._i18n.t("menu.help.version"))
+        self._tools_menu.setTitle(self._i18n.t("menu.tools"))
+        self.act_show_port_b.setText(self._i18n.t("menu.tools.show_port_b"))
+
+        self.port_a.lbl_title.setText(self._i18n.t("panel.title_a"))
+        self.port_b.lbl_title.setText(self._i18n.t("panel.title_b"))
+        self.connection_label.setText(
+            f"{self._i18n.t('status.conn_prefix')}: {self._i18n.t('status.conn.off')}"
+        )
+        if self._seq_status_display_name:
+            self.status_label.setText(
+                self._i18n.t("status.loaded_seq").format(name=self._seq_status_display_name)
+            )
+        else:
+            self.status_label.setText(self._i18n.t("status.main.ready"))
 
         # left tree
         self.sequence_tree.setHeaderLabels([
             self._i18n.t("seq.header.step"),
             self._i18n.t("seq.header.status"),
+            self._i18n.t("seq.header.retries"),
         ])
 
         # QPlainTextEdit 无需替换首项，避免覆盖已输出内容
@@ -570,6 +656,9 @@ class MainWindow(QMainWindow):
         # propagate to child panels
         self.port_a.retranslate(self._i18n)
         self.port_b.retranslate(self._i18n)
+        self._refresh_port_status_labels()
+        if self._current_sequence:
+            self._update_sequence_tree(self._current_sequence)
 
     # ---- config dialog ---------------------------------------------------
     def _on_open_config(self) -> None:
@@ -607,11 +696,11 @@ class MainWindow(QMainWindow):
     def _on_start(self) -> None:
         """全局开始 - 按选择启动 Port A/Port B"""
         if not self._current_sequence:
-            QMessageBox.warning(self, "警告", "请先加载测试序列")
+            QMessageBox.warning(self, self._i18n.t("dialog.warning"), self._i18n.t("msg.need_sequence"))
             return
         ports = self._selected_ports()
         if not ports:
-            QMessageBox.information(self, "提示", "请先选择要运行的端口 (Port A/Port B)")
+            QMessageBox.information(self, self._i18n.t("dialog.info"), self._i18n.t("msg.select_port"))
             return
         for p in ports:
             if p == "A":
@@ -643,7 +732,7 @@ class MainWindow(QMainWindow):
             if hasattr(self, "_thread_a") and self._thread_a and self._thread_a.isRunning():
                 self._thread_a.quit()
                 self._thread_a.wait(3000)  # 等待3秒
-            self.port_a.lbl_status.setText("Status: Idle")
+            self._set_port_machine_status("A", "Idle")
             self._running_ports.discard("A")
         # 停止Port B
         if "B" in ports:
@@ -652,7 +741,7 @@ class MainWindow(QMainWindow):
             if hasattr(self, "_thread_b") and self._thread_b and self._thread_b.isRunning():
                 self._thread_b.quit()
                 self._thread_b.wait(3000)  # 等待3秒
-            self.port_b.lbl_status.setText("Status: Idle")
+            self._set_port_machine_status("B", "Idle")
             self._running_ports.discard("B")
 
         # 如果两个都停止，则清空运行端口记录
@@ -681,7 +770,7 @@ class MainWindow(QMainWindow):
         """启动指定端口 - 处理暂停状态恢复"""
         print(f"DEBUG: 启动端口 {port}")
         if not self._current_sequence:
-            QMessageBox.warning(self, "警告", "请先加载测试序列")
+            QMessageBox.warning(self, self._i18n.t("dialog.warning"), self._i18n.t("msg.need_sequence"))
             return
             
         if port == "A":
@@ -745,7 +834,7 @@ class MainWindow(QMainWindow):
                 self._thread_a.wait(3000)
                 print(f"DEBUG: Port A 线程已停止")
             self._running_ports.discard("A")
-            self.port_a.lbl_status.setText("Status: Idle")
+            self._set_port_machine_status("A", "Idle")
             print(f"DEBUG: Port A 状态已更新为 Idle")
         elif port == "B":
             if hasattr(self, "_worker_b") and self._worker_b:
@@ -756,13 +845,62 @@ class MainWindow(QMainWindow):
                 self._thread_b.wait(3000)
                 print(f"DEBUG: Port B 线程已停止")
             self._running_ports.discard("B")
-            self.port_b.lbl_status.setText("Status: Idle")
+            self._set_port_machine_status("B", "Idle")
             print(f"DEBUG: Port B 状态已更新为 Idle")
     
-    def _start_port_with_sequence(self, port: str, sequence, retest: bool = False) -> None:
+    def _is_port_thread_busy(self, port_short: str) -> bool:
+        """端口测试线程是否仍在运行（含单步/整序列）。"""
+        if port_short == "A":
+            t = getattr(self, "_thread_a", None)
+            return bool(t and t.isRunning())
+        if port_short == "B":
+            t = getattr(self, "_thread_b", None)
+            return bool(t and t.isRunning())
+        return False
+
+    def _run_only_this_step(self, port_short: str, step_id: str) -> None:
+        """只执行序列中指定的一步（右键菜单）。"""
+        if not self._current_sequence:
+            QMessageBox.warning(
+                self,
+                self._i18n.t("dialog.warning"),
+                self._i18n.t("msg.need_sequence"),
+            )
+            return
+        if self._current_sequence.get_step_by_id(step_id) is None:
+            QMessageBox.warning(
+                self,
+                self._i18n.t("dialog.warning"),
+                self._i18n.t("msg.step_not_found").format(id=step_id),
+            )
+            return
+        if self._is_port_thread_busy(port_short):
+            port_label = (
+                self._i18n.t("panel.title_a")
+                if port_short == "A"
+                else self._i18n.t("panel.title_b")
+            )
+            QMessageBox.warning(
+                self,
+                self._i18n.t("dialog.warning"),
+                self._i18n.t("msg.port_thread_busy").format(port=port_label),
+            )
+            return
+        self._start_port_with_sequence(
+            port_short, self._current_sequence, retest=False, single_step_id=step_id
+        )
+
+    def _start_port_with_sequence(
+        self,
+        port: str,
+        sequence,
+        retest: bool = False,
+        *,
+        single_step_id: Optional[str] = None,
+    ) -> None:
         """使用指定序列启动Port"""
         if not sequence:
-            QMessageBox.warning(self, "警告", "请先加载测试序列")
+            QMessageBox.warning(self, self._i18n.t("dialog.warning"), self._i18n.t("msg.need_sequence"))
             return
         
         # 将端口名称转换为完整格式
@@ -771,28 +909,32 @@ class MainWindow(QMainWindow):
         # 创建测试上下文
         context = self._create_test_context(full_port_name)
         if not context:
-            QMessageBox.warning(self, "警告", f"无法创建{full_port_name}的测试上下文")
+            QMessageBox.warning(
+                self,
+                self._i18n.t("dialog.warning"),
+                self._i18n.t("msg.context_fail").format(port=full_port_name),
+            )
             return
             
         # 清零结果表和当前测试项显示
         if port == "A":
             self.port_a.table.setRowCount(0)
             self.port_a.lbl_step.setText("-")
-            self.port_a.lbl_expect.setText("期望: -")
-            self.port_a.lbl_meas.setText("测量: -")
-            self.port_a.lbl_retries.setText("重试: 0")
+            self.port_a.lbl_expect.setText(self._fmt_expect("-"))
+            self.port_a.lbl_meas.setText(self._fmt_meas("-"))
+            self.port_a.lbl_retries.setText(self._fmt_retries(0))
             self._port_a_had_fail = False
-            self.port_a.lbl_status.setText("Status: Running")
+            self._set_port_machine_status("A", "Running")
             if hasattr(self.port_a, "set_overall_result"):
                 self.port_a.set_overall_result(None)
         elif port == "B":
             self.port_b.table.setRowCount(0)
             self.port_b.lbl_step.setText("-")
-            self.port_b.lbl_expect.setText("期望: -")
-            self.port_b.lbl_meas.setText("测量: -")
-            self.port_b.lbl_retries.setText("重试: 0")
+            self.port_b.lbl_expect.setText(self._fmt_expect("-"))
+            self.port_b.lbl_meas.setText(self._fmt_meas("-"))
+            self.port_b.lbl_retries.setText(self._fmt_retries(0))
             self._port_b_had_fail = False
-            self.port_b.lbl_status.setText("Status: Running")
+            self._set_port_machine_status("B", "Running")
             if hasattr(self.port_b, "set_overall_result"):
                 self.port_b.set_overall_result(None)
             
@@ -800,7 +942,12 @@ class MainWindow(QMainWindow):
         self._running_ports.add(port)
         
         # 启动工作线程
-        self._start_worker_thread(full_port_name, sequence, retest=retest)
+        self._start_worker_thread(
+            full_port_name,
+            sequence,
+            retest=retest,
+            single_step_id=single_step_id,
+        )
     
     def _on_port_mode_changed(self, port: str, mode: str) -> None:
         """处理端口测试模式改变"""
@@ -943,7 +1090,14 @@ class MainWindow(QMainWindow):
             self.alerts.appendPlainText(f"[{port}] 创建测试上下文失败: {e}")
             return None
     
-    def _start_worker_thread(self, port: str, sequence, retest: bool = False) -> None:
+    def _start_worker_thread(
+        self,
+        port: str,
+        sequence,
+        retest: bool = False,
+        *,
+        single_step_id: Optional[str] = None,
+    ) -> None:
         """启动工作线程
         
         Parameters
@@ -954,6 +1108,8 @@ class MainWindow(QMainWindow):
             要执行的测试序列
         retest : bool
             是否为复测模式（跳过SN扫描，使用上一轮SN）
+        single_step_id : str | None
+            若设置，则仅从该步骤开始且只执行这一条后结束本轮
         """
         from PySide6.QtCore import QThread
         from ..worker import PortWorker
@@ -1000,6 +1156,11 @@ class MainWindow(QMainWindow):
             # 设置是否为复测模式
             if hasattr(self._worker_a, "set_retest_mode"):
                 self._worker_a.set_retest_mode(retest)
+            if single_step_id:
+                self._worker_a.set_start_from_step(single_step_id)
+                self._worker_a.set_run_single_step_only(True)
+            else:
+                self._worker_a.set_run_single_step_only(False)
             self._thread_a = QThread(self)
             self._worker_a.moveToThread(self._thread_a)
             self._thread_a.started.connect(self._worker_a.start_run)
@@ -1048,6 +1209,11 @@ class MainWindow(QMainWindow):
             # 设置是否为复测模式
             if hasattr(self._worker_b, "set_retest_mode"):
                 self._worker_b.set_retest_mode(retest)
+            if single_step_id:
+                self._worker_b.set_start_from_step(single_step_id)
+                self._worker_b.set_run_single_step_only(True)
+            else:
+                self._worker_b.set_run_single_step_only(False)
             self._thread_b = QThread(self)
             self._worker_b.moveToThread(self._thread_b)
             self._thread_b.started.connect(self._worker_b.start_run)
@@ -1061,9 +1227,9 @@ class MainWindow(QMainWindow):
         # 完成时根据是否失败显示 Pass/Fail
         if status == "Completed":
             final = "Fail" if self._port_a_had_fail else "Pass"
-            self.port_a.lbl_status.setText(f"Status: {final}")
+            self._set_port_machine_status("A", final)
             self.port_a.lbl_step.setText("-")
-            self.port_a.lbl_expect.setText("期望: -")
+            self.port_a.lbl_expect.setText(self._fmt_expect("-"))
             self.port_a.progress.setValue(100)
             if hasattr(self.port_a, "set_overall_result"):
                 self.port_a.set_overall_result(final)
@@ -1071,7 +1237,7 @@ class MainWindow(QMainWindow):
             sn = self._sn_by_port.get("PortA", "NULL")
             self.log_test_end("PortA", sn, final, 0.0)
         else:
-            self.port_a.lbl_status.setText(f"Status: {status}")
+            self._set_port_machine_status("A", status)
             if status in ("Idle", "Preparing", "Running", "Paused") and hasattr(self.port_a, "set_overall_result"):
                 # 非完成态不展示整体结果
                 self.port_a.set_overall_result(None)
@@ -1098,16 +1264,18 @@ class MainWindow(QMainWindow):
                 if step.id == step_id:
                     if status == "Running":
                         self.port_a.lbl_step.setText(step.name)
-                        self.port_a.lbl_expect.setText(f"期望: {getattr(step, 'expect', 'N/A')}")
+                        exp = getattr(step, "expect", None)
+                        exp_s = self._i18n.t("common.na") if exp in (None, "") else str(exp)
+                        self.port_a.lbl_expect.setText(self._fmt_expect(exp_s))
                     elif status == "Pass":
                         self.port_a.lbl_step.setText("-")
-                        self.port_a.lbl_expect.setText("期望: -")
+                        self.port_a.lbl_expect.setText(self._fmt_expect("-"))
                     elif status == "Fail":
-                        self.port_a.lbl_step.setText(f"{step.name} — 失败")
-                        self.port_a.lbl_expect.setText("期望: -")
+                        self.port_a.lbl_step.setText(f"{step.name}{self._i18n.t('panel.step_failed_suffix')}")
+                        self.port_a.lbl_expect.setText(self._fmt_expect("-"))
                     elif status == "Skipped":
                         self.port_a.lbl_step.setText("-")
-                        self.port_a.lbl_expect.setText("期望: -")
+                        self.port_a.lbl_expect.setText(self._fmt_expect("-"))
                     break
     
     def _on_worker_a_step_result(self, step_id: str, result) -> None:
@@ -1120,7 +1288,7 @@ class MainWindow(QMainWindow):
                     self._sn_by_port["PortA"] = sn_value
                     # 更新Port A 面板上的 SN 显示
                     try:
-                        self.port_a.lbl_sn.setText(f"SN: {sn_value}")
+                        self._set_port_sn_label(self.port_a, sn_value)
                     except Exception:
                         pass
         except Exception:
@@ -1187,7 +1355,7 @@ class MainWindow(QMainWindow):
                     self._sn_by_port["PortB"] = sn_value
                     # 更新Port B 面板上的 SN 显示
                     try:
-                        self.port_b.lbl_sn.setText(f"SN: {sn_value}")
+                        self._set_port_sn_label(self.port_b, sn_value)
                     except Exception:
                         pass
         except Exception:
@@ -1247,9 +1415,9 @@ class MainWindow(QMainWindow):
     def _on_worker_b_status(self, status: str) -> None:
         if status == "Completed":
             final = "Fail" if self._port_b_had_fail else "Pass"
-            self.port_b.lbl_status.setText(f"Status: {final}")
+            self._set_port_machine_status("B", final)
             self.port_b.lbl_step.setText("-")
-            self.port_b.lbl_expect.setText("期望: -")
+            self.port_b.lbl_expect.setText(self._fmt_expect("-"))
             self.port_b.progress.setValue(100)
             if hasattr(self.port_b, "set_overall_result"):
                 self.port_b.set_overall_result(final)
@@ -1257,7 +1425,7 @@ class MainWindow(QMainWindow):
             sn = self._sn_by_port.get("PortB", "NULL")
             self.log_test_end("PortB", sn, final, 0.0)
         else:
-            self.port_b.lbl_status.setText(f"Status: {status}")
+            self._set_port_machine_status("B", status)
             if status in ("Idle", "Preparing", "Running", "Paused") and hasattr(self.port_b, "set_overall_result"):
                 self.port_b.set_overall_result(None)
         if status in ("Idle", "Completed") and hasattr(self, "_thread_b"):
@@ -1283,16 +1451,18 @@ class MainWindow(QMainWindow):
                 if step.id == step_id:
                     if status == "Running":
                         self.port_b.lbl_step.setText(step.name)
-                        self.port_b.lbl_expect.setText(f"期望: {getattr(step, 'expect', 'N/A')}")
+                        exp = getattr(step, "expect", None)
+                        exp_s = self._i18n.t("common.na") if exp in (None, "") else str(exp)
+                        self.port_b.lbl_expect.setText(self._fmt_expect(exp_s))
                     elif status == "Pass":
                         self.port_b.lbl_step.setText("-")
-                        self.port_b.lbl_expect.setText("期望: -")
+                        self.port_b.lbl_expect.setText(self._fmt_expect("-"))
                     elif status == "Fail":
-                        self.port_b.lbl_step.setText(f"{step.name} — 失败")
-                        self.port_b.lbl_expect.setText("期望: -")
+                        self.port_b.lbl_step.setText(f"{step.name}{self._i18n.t('panel.step_failed_suffix')}")
+                        self.port_b.lbl_expect.setText(self._fmt_expect("-"))
                     elif status == "Skipped":
                         self.port_b.lbl_step.setText("-")
-                        self.port_b.lbl_expect.setText("期望: -")
+                        self.port_b.lbl_expect.setText(self._fmt_expect("-"))
                     break
     
     # ---- logging system ----------------------------------------------------
@@ -1559,7 +1729,11 @@ class MainWindow(QMainWindow):
                     editor.sig_sequence_loaded.connect(self._on_sequence_loaded)
                 
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"无法打开序列编辑器: {e}")
+            QMessageBox.critical(
+                self,
+                self._i18n.t("dialog.error"),
+                self._i18n.t("err.open_seq_editor").format(e=e),
+            )
     
     def _open_step_library(self) -> None:
         """打开步骤库管理器"""
@@ -1573,7 +1747,11 @@ class MainWindow(QMainWindow):
                     library.sig_step_selected.connect(self._on_step_template_selected)
                 
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"无法打开步骤库管理器: {e}")
+            QMessageBox.critical(
+                self,
+                self._i18n.t("dialog.error"),
+                self._i18n.t("err.open_step_lib").format(e=e),
+            )
     
     def _on_sequence_loaded(self, sequence_path: str) -> None:
         """处理序列加载事件"""
@@ -1581,15 +1759,23 @@ class MainWindow(QMainWindow):
             from ...testcases.utils import load_test_sequence
             sequence = load_test_sequence(sequence_path)
             self._current_sequence = sequence
+            self._current_sequence_file = sequence_path
             self._update_sequence_display()
             
             # 保存最后使用的序列到配置
             self._save_last_used_sequence(sequence_path)
             
-            QMessageBox.information(self, "序列加载成功", 
-                                   f"已加载测试序列：{sequence_path}")
+            QMessageBox.information(
+                self,
+                self._i18n.t("msg.load_success_title"),
+                self._i18n.t("msg.seq_loaded_ok").format(name=sequence_path),
+            )
         except Exception as e:
-            QMessageBox.warning(self, "序列加载失败", f"加载序列时出错：{e}")
+            QMessageBox.warning(
+                self,
+                self._i18n.t("msg.load_fail_title"),
+                self._i18n.t("msg.seq_editor_load_fail").format(err=e),
+            )
     
     def _on_step_template_selected(self, step_config) -> None:
         """处理步骤模板选择事件"""
@@ -1600,10 +1786,17 @@ class MainWindow(QMainWindow):
                     child.insert_step_template(step_config)
                     break
             else:
-                QMessageBox.information(self, "模板选择", 
-                                       f"已选择步骤模板：{step_config.name}\n\n请在序列编辑器中使用此模板。")
+                QMessageBox.information(
+                    self,
+                    self._i18n.t("dialog.info"),
+                    self._i18n.t("msg.template_picked").format(name=step_config.name),
+                )
         except Exception as e:
-            QMessageBox.warning(self, "模板处理失败", f"处理步骤模板时出错：{e}")
+            QMessageBox.warning(
+                self,
+                self._i18n.t("dialog.warn"),
+                self._i18n.t("msg.template_fail").format(err=e),
+            )
     
     def _update_sequence_display(self) -> None:
         """更新序列显示"""
@@ -1612,8 +1805,11 @@ class MainWindow(QMainWindow):
             self._update_sequence_tree(self._current_sequence)
             # 构建显示名称
             display_name = f"{self._current_sequence.metadata.product}-{self._current_sequence.metadata.station}-{self._current_sequence.metadata.version}-{self._current_sequence.metadata.created_at[:10].replace('-', '')}"
-            # 更新状态栏
-            self.statusBar().showMessage(f"当前序列: {display_name}")
+            self._seq_status_display_name = display_name
+            self.status_label.setText(self._i18n.t("status.loaded_seq").format(name=display_name))
+            self.statusBar().showMessage(
+                self._i18n.t("status.bar.current_seq").format(name=display_name)
+            )
     
     def _load_test_sequence(self) -> None:
         """加载测试序列"""
@@ -1622,15 +1818,18 @@ class MainWindow(QMainWindow):
             
             # 打开文件选择对话框
             file_path, _ = QFileDialog.getOpenFileName(
-                self, "加载测试序列",
-                "", "YAML文件 (*.yaml *.yml);;JSON文件 (*.json);;所有文件 (*)"
+                self,
+                self._i18n.t("dialog.load_sequence"),
+                "",
+                self._i18n.t("dialog.load_filter"),
             )
             
             if file_path:
                 # 加载序列文件
                 sequence = load_test_sequence(file_path)
                 self._current_sequence = sequence  # 更新当前序列
-                
+                self._current_sequence_file = file_path
+
                 # 更新序列树显示
                 self._update_sequence_tree(sequence)
                 
@@ -1640,14 +1839,21 @@ class MainWindow(QMainWindow):
                 # 构建显示名称
                 display_name = f"{sequence.metadata.product}-{sequence.metadata.station}-{sequence.metadata.version}-{sequence.metadata.created_at[:10].replace('-', '')}"
                 
-                # 更新状态栏
-                self.status_label.setText(f"已加载序列: {display_name}")
+                self._seq_status_display_name = display_name
+                self.status_label.setText(self._i18n.t("status.loaded_seq").format(name=display_name))
                 
-                # 显示成功消息
-                QMessageBox.information(self, "加载成功", f"已成功加载测试序列:\n{display_name}")
+                QMessageBox.information(
+                    self,
+                    self._i18n.t("msg.load_success_title"),
+                    self._i18n.t("msg.load_success_body").format(name=display_name),
+                )
                 
         except Exception as e:
-            QMessageBox.critical(self, "加载失败", f"无法加载测试序列:\n{str(e)}")
+            QMessageBox.critical(
+                self,
+                self._i18n.t("msg.load_fail_title"),
+                self._i18n.t("msg.load_fail").format(err=str(e)),
+            )
     
     def _update_sequence_tree(self, sequence) -> None:
         """更新序列树显示"""
@@ -1668,8 +1874,16 @@ class MainWindow(QMainWindow):
             print(f"DEBUG: 显示名称: {display_name}")
             
             # 设置根节点
-            self.seq_model.set_root(display_name, "就绪")
-            
+            self.seq_model.set_root(
+                display_name,
+                self._i18n.t("seq.status.ready"),
+                header_labels=[
+                    self._i18n.t("seq.header.step"),
+                    self._i18n.t("seq.header.status"),
+                    self._i18n.t("seq.header.retries"),
+                ],
+            )
+
             # 添加步骤
             for i, step in enumerate(sequence.steps):
                 print(f"DEBUG: 处理步骤{i+1}: ID='{step.id}', Name='{step.name}'")
@@ -1689,10 +1903,10 @@ class MainWindow(QMainWindow):
                 # 检查断点状态
                 if step.id in self._breakpoints:
                     step_item.setBackground(0, QColor(255, 200, 200))  # 浅红色背景
-                    step_item.setText(1, "有断点")
+                    step_item.setText(1, self._i18n.t("seq.breakpoint.has"))
                 elif step.id == self._current_breakpoint:
                     step_item.setBackground(0, QColor(255, 255, 0))  # 黄色背景
-                    step_item.setText(1, "断点暂停")
+                    step_item.setText(1, self._i18n.t("seq.breakpoint.paused"))
             
             # 展开根节点
             self.seq_model._root_item.setExpanded(True)
@@ -1727,15 +1941,20 @@ class MainWindow(QMainWindow):
                 from ...testcases.utils import load_test_sequence
                 sequence = load_test_sequence(sequence_file)
                 self._current_sequence = sequence
+                self._current_sequence_file = sequence_file
                 self._update_sequence_tree(sequence)
                 # 构建显示名称
                 display_name = f"{sequence.metadata.product}-{sequence.metadata.station}-{sequence.metadata.version}-{sequence.metadata.created_at[:10].replace('-', '')}"
                 print(f"已加载序列: {display_name}")
+                self._seq_status_display_name = display_name
+                self.status_label.setText(self._i18n.t("status.loaded_seq").format(name=display_name))
             else:
                 print("未找到可加载的序列文件")
+                self._current_sequence_file = None
                 self._create_empty_sequence_tree()
         except Exception as e:
             print(f"加载序列失败: {e}")
+            self._current_sequence_file = None
             # 如果加载失败，创建一个空的序列树
             self._create_empty_sequence_tree()
     
@@ -1752,8 +1971,18 @@ class MainWindow(QMainWindow):
     
     def _create_empty_sequence_tree(self) -> None:
         """创建空的序列树"""
+        self._seq_status_display_name = None
+        self.status_label.setText(self._i18n.t("status.main.ready"))
         self.seq_model.clear()
-        self.seq_model.set_root("无序列", "就绪")
+        self.seq_model.set_root(
+            self._i18n.t("seq.empty_tree"),
+            self._i18n.t("seq.status.ready"),
+            header_labels=[
+                self._i18n.t("seq.header.step"),
+                self._i18n.t("seq.header.status"),
+                self._i18n.t("seq.header.retries"),
+            ],
+        )
     
     def closeEvent(self, event):
         """窗口关闭事件，清理资源"""
@@ -1780,6 +2009,42 @@ class MainWindow(QMainWindow):
             print(f"清理资源时出错: {e}")
         finally:
             event.accept()
+
+    def _on_sequence_item_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
+        """双击步骤行：打开步骤属性（复测次数等）。"""
+        if item is None or item.parent() is None:
+            return
+        raw = item.data(0, Qt.UserRole)
+        step_id = str(raw).strip() if raw is not None else ""
+        if step_id:
+            self._open_step_properties_for_step_id(step_id)
+
+    def _open_step_properties_for_step_id(self, step_id: str) -> None:
+        """可视化编辑单步 retries / 超时 / 失败策略，并可写回 YAML。"""
+        if not self._current_sequence:
+            QMessageBox.warning(self, self._i18n.t("dialog.info"), self._i18n.t("msg.need_sequence"))
+            return
+        step = self._current_sequence.get_step_by_id(step_id)
+        if step is None:
+            QMessageBox.warning(
+                self,
+                self._i18n.t("dialog.info"),
+                self._i18n.t("msg.step_not_found").format(id=step_id),
+            )
+            return
+        dlg = StepPropertiesDialog(
+            self,
+            step,
+            sequence=self._current_sequence,
+            save_yaml_path=self._current_sequence_file,
+            translator=self._i18n,
+        )
+        if dlg.exec() == QDialog.Accepted:
+            self._update_sequence_tree(self._current_sequence)
+            if dlg.did_save_yaml and self._current_sequence_file:
+                self.statusBar().showMessage(
+                    self._i18n.t("status.bar.saved_seq").format(path=self._current_sequence_file)
+                )
     
     def _show_sequence_context_menu(self, position):
         """显示序列树右键菜单"""
@@ -1787,45 +2052,55 @@ class MainWindow(QMainWindow):
         if not item or not item.parent():  # 确保是步骤项，不是根节点
             return
             
-        step_id = item.data(0, 0)
+        raw_id = item.data(0, Qt.UserRole)
+        step_id = str(raw_id).strip() if raw_id is not None else ""
         if not step_id:
             return
             
         menu = QMenu(self)
-        
+        act_props = menu.addAction(self._i18n.t("seq.menu.step_props"))
+        act_props.triggered.connect(lambda: self._open_step_properties_for_step_id(step_id))
+        menu.addSeparator()
+
+        act_run_a = menu.addAction(self._i18n.t("seq.context.run_only_step_a"))
+        act_run_a.triggered.connect(lambda: self._run_only_this_step("A", step_id))
+        act_run_b = menu.addAction(self._i18n.t("seq.context.run_only_step_b"))
+        act_run_b.triggered.connect(lambda: self._run_only_this_step("B", step_id))
+        menu.addSeparator()
+
         # 断点操作
         if step_id in self._breakpoints:
-            clear_action = menu.addAction("清除断点")
+            clear_action = menu.addAction(self._i18n.t("seq.context.clear_bp"))
             clear_action.triggered.connect(lambda: self._clear_breakpoint(step_id))
         else:
-            set_action = menu.addAction("设置断点")
+            set_action = menu.addAction(self._i18n.t("seq.context.set_bp"))
             set_action.triggered.connect(lambda: self._set_breakpoint(step_id))
             
         # 继续操作 - 根据运行端口显示
         if self._current_breakpoint == step_id:
             if "A" in self._running_ports:
-                continue_action = menu.addAction("继续执行在A端口")
+                continue_action = menu.addAction(self._i18n.t("seq.context.continue_a"))
                 continue_action.triggered.connect(lambda: self._continue_from_breakpoint("A"))
             if "B" in self._running_ports:
-                continue_action = menu.addAction("继续执行在B端口")
+                continue_action = menu.addAction(self._i18n.t("seq.context.continue_b"))
                 continue_action.triggered.connect(lambda: self._continue_from_breakpoint("B"))
                 
         # 重新开始操作 - 从断点处重新开始
         if step_id in self._breakpoints:
             if "A" in self._running_ports:
-                restart_action = menu.addAction("重新开始在A端口")
+                restart_action = menu.addAction(self._i18n.t("seq.context.restart_a"))
                 restart_action.triggered.connect(lambda: self._restart_from_breakpoint("A", step_id))
             if "B" in self._running_ports:
-                restart_action = menu.addAction("重新开始在B端口")
+                restart_action = menu.addAction(self._i18n.t("seq.context.restart_b"))
                 restart_action.triggered.connect(lambda: self._restart_from_breakpoint("B", step_id))
                 
         # 跳过断点操作 - 跳过当前断点，从下一个步骤开始
         if step_id in self._breakpoints and self._current_breakpoint == step_id:
             if "A" in self._running_ports:
-                skip_action = menu.addAction("跳过断点在A端口")
+                skip_action = menu.addAction(self._i18n.t("seq.context.skip_a"))
                 skip_action.triggered.connect(lambda: self._skip_breakpoint("A", step_id))
             if "B" in self._running_ports:
-                skip_action = menu.addAction("跳过断点在B端口")
+                skip_action = menu.addAction(self._i18n.t("seq.context.skip_b"))
                 skip_action.triggered.connect(lambda: self._skip_breakpoint("B", step_id))
                 
         menu.exec_(self.sequence_tree.mapToGlobal(position))
@@ -1858,7 +2133,7 @@ class MainWindow(QMainWindow):
     def _restart_from_breakpoint(self, port: str, step_id: str):
         """从断点重新开始执行"""
         if not self._current_sequence:
-            QMessageBox.warning(self, "警告", "请先加载测试序列")
+            QMessageBox.warning(self, self._i18n.t("dialog.warning"), self._i18n.t("msg.need_sequence"))
             return
             
         # 设置当前断点为指定步骤
@@ -1892,7 +2167,7 @@ class MainWindow(QMainWindow):
     def _skip_breakpoint(self, port: str, step_id: str):
         """跳过断点，从下一个步骤开始执行"""
         if not self._current_sequence:
-            QMessageBox.warning(self, "警告", "请先加载测试序列")
+            QMessageBox.warning(self, self._i18n.t("dialog.warning"), self._i18n.t("msg.need_sequence"))
             return
             
         # 找到当前断点在序列中的位置
@@ -1903,12 +2178,16 @@ class MainWindow(QMainWindow):
                 break
                 
         if current_step_index == -1:
-            QMessageBox.warning(self, "警告", "未找到当前断点步骤")
+            QMessageBox.warning(self, self._i18n.t("dialog.warning"), self._i18n.t("msg.bp_step_not_found"))
             return
             
         # 检查是否有下一个步骤
         if current_step_index >= len(self._current_sequence.steps) - 1:
-            QMessageBox.information(self, "提示", "当前断点是最后一个步骤，无法跳过")
+            QMessageBox.information(
+                self,
+                self._i18n.t("dialog.info"),
+                self._i18n.t("msg.bp_cannot_skip_last"),
+            )
             return
             
         # 获取下一个步骤
@@ -1956,7 +2235,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtGui import QGuiApplication
 
         menu = QMenu(self)
-        act_copy_sel = menu.addAction("复制选中内容")
+        act_copy_sel = menu.addAction(self._i18n.t("alerts.copy_selection"))
         # 若无选择则默认选中光标所在行
         tc = self.alerts.textCursor()
         if not tc.hasSelection():
@@ -1981,10 +2260,11 @@ class MainWindow(QMainWindow):
     def _on_exit(self) -> None:
         """退出应用程序"""
         reply = QMessageBox.question(
-            self, "确认退出",
-            "确定要退出TestTool吗？",
+            self,
+            self._i18n.t("exit.confirm_title"),
+            self._i18n.t("exit.confirm_body"),
             QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            QMessageBox.No,
         )
         
         if reply == QMessageBox.Yes:
@@ -1998,7 +2278,7 @@ class MainWindow(QMainWindow):
             dialog.exec()
             self._refresh_mes_status()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"无法打开MES配置对话框: {e}")
+            QMessageBox.critical(self, self._i18n.t("dialog.error"), self._i18n.t("err.open_mes").format(e=e))
     
     def _on_open_ports_config(self) -> None:
         """打开端口配置对话框"""
@@ -2007,7 +2287,7 @@ class MainWindow(QMainWindow):
             dialog = ConfigDialog(self, translator=self._i18n, service=self._config_service)
             dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"无法打开端口配置对话框: {e}")
+            QMessageBox.critical(self, self._i18n.t("dialog.error"), self._i18n.t("err.open_ports").format(e=e))
 
     def _on_open_version_config(self) -> None:
         """打开版本配置对话框"""
@@ -2016,4 +2296,4 @@ class MainWindow(QMainWindow):
             dialog = VersionConfigDialog(self, self._config_service)
             dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"无法打开版本配置对话框: {e}")
+            QMessageBox.critical(self, self._i18n.t("dialog.error"), self._i18n.t("err.open_version").format(e=e))

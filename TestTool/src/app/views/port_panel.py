@@ -52,6 +52,8 @@ class PortPanel(QWidget):
     def __init__(self, title: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._title = title
+        self._sn_value = "-"
+        self._overall_result_raw: Optional[str] = None
         self._i18n = I18n("zh_CN")
         self._logger = logging.getLogger(__name__)
         self._build()
@@ -78,8 +80,11 @@ class PortPanel(QWidget):
         self.chk_selected = QCheckBox(self._top_banner)
         self.chk_selected.setChecked(True)
         self.lbl_title = QLabel(self._title, self._top_banner)
-        self.lbl_sn = QLabel(f"{self._i18n.t('panel.sn')}: -", self._top_banner)
-        self.lbl_status = QLabel(f"{self._i18n.t('panel.status')}: Idle", self._top_banner)
+        self.lbl_sn = QLabel(f"{self._i18n.t('panel.sn')}: {self._sn_value}", self._top_banner)
+        self.lbl_status = QLabel(
+            f"{self._i18n.t('panel.status')}: {self._i18n.t('run.port_status.idle')}",
+            self._top_banner,
+        )
 
         # 设置Port标题的字体样式（增大50%，不加粗）
         title_font = QFont()
@@ -128,19 +133,18 @@ class PortPanel(QWidget):
         actions.addWidget(self.btn_stop)
         
         # 添加测试模式选择器
-        mode_label = QLabel("测试模式:", self)
+        self.mode_label = QLabel(self._i18n.t("panel.mode.label"), self)
         self.combo_mode = QComboBox(self)
-        self.combo_mode.addItems(["产线模式", "Debug模式"])
-        self.combo_mode.setCurrentText("产线模式")  # 默认产线模式
-        self.combo_mode.currentTextChanged.connect(self._on_mode_changed)
+        self._populate_mode_combo(select_production=True)
+        self.combo_mode.currentIndexChanged.connect(self._on_mode_index_changed)
         
         # 设置模式选择器样式
-        mode_label.setFixedHeight(30)
+        self.mode_label.setFixedHeight(30)
         self.combo_mode.setFixedHeight(30)
         self.combo_mode.setMinimumWidth(100)
-        
+
         actions.addWidget(self._create_spacer(20))  # 添加间距
-        actions.addWidget(mode_label)
+        actions.addWidget(self.mode_label)
         actions.addWidget(self.combo_mode)
         actions.addStretch(1)
         banner_root.addLayout(actions)
@@ -169,13 +173,7 @@ class PortPanel(QWidget):
 
         # Results table - 固定尺寸，布满整个区域
         self.table = QTableWidget(0, 5, self)
-        self.table.setHorizontalHeaderLabels([
-            "Step",
-            "Value",
-            "Low",
-            "High",
-            "Unit",
-        ])
+        self._apply_table_headers()
         # 为避免自定义背景被交替色覆盖，这里关闭交替行颜色
         self.table.setAlternatingRowColors(False)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -340,16 +338,63 @@ class PortPanel(QWidget):
         spacer.setFixedWidth(width)
         return spacer
     
-    def _on_mode_changed(self, mode_text: str):
-        """处理测试模式改变"""
-        # 将中文模式名称转换为英文标识
-        mode = "production" if mode_text == "产线模式" else "debug"
+    def _populate_mode_combo(self, *, select_production: bool) -> None:
+        self.combo_mode.blockSignals(True)
+        self.combo_mode.clear()
+        self.combo_mode.addItem(self._i18n.t("panel.mode.production"), "production")
+        self.combo_mode.addItem(self._i18n.t("panel.mode.debug"), "debug")
+        self.combo_mode.setCurrentIndex(0 if select_production else 1)
+        self.combo_mode.blockSignals(False)
+
+    def _on_mode_index_changed(self, _idx: int) -> None:
+        data = self.combo_mode.currentData()
+        mode = str(data) if data is not None else "production"
         self.sig_mode_changed.emit(mode)
-    
+
+    def _apply_table_headers(self) -> None:
+        self.table.setHorizontalHeaderLabels(
+            [
+                self._i18n.t("panel.table.step"),
+                self._i18n.t("panel.table.value"),
+                self._i18n.t("panel.table.low"),
+                self._i18n.t("panel.table.high"),
+                self._i18n.t("panel.table.unit"),
+            ]
+        )
+
+    def retranslate(self, i18n: I18n) -> None:
+        """与主窗口语言切换同步。"""
+        cur_mode = self.get_test_mode()
+        self._i18n = i18n
+        self.btn_start.setText(i18n.t("panel.actions.start"))
+        self.btn_pause.setText(i18n.t("panel.actions.pause"))
+        self.btn_stop.setText(i18n.t("panel.actions.stop"))
+        self.mode_label.setText(i18n.t("panel.mode.label"))
+        self._populate_mode_combo(select_production=(cur_mode == "production"))
+        self.lbl_sn.setText(f"{i18n.t('panel.sn')}: {self._sn_value}")
+        st = self.lbl_status.text().split(":", 1)[-1].strip() if ":" in self.lbl_status.text() else ""
+        # 状态列在运行时由 MainWindow 按中文/英文刷新；此处仅更新前缀
+        if not st:
+            st = i18n.t("run.port_status.idle")
+        self.lbl_status.setText(f"{i18n.t('panel.status')}: {st}")
+        step_group = self.lbl_step.parentWidget()
+        if isinstance(step_group, QGroupBox):
+            step_group.setTitle(i18n.t("panel.current_step"))
+        self.lbl_expect.setText(f"{i18n.t('panel.expect')}: -")
+        self.lbl_meas.setText(f"{i18n.t('panel.meas')}: -")
+        self.lbl_retries.setText(f"{i18n.t('panel.retries')}: 0")
+        self._apply_table_headers()
+        if self._overall_result_raw == "pass":
+            self.set_overall_result("Pass")
+        elif self._overall_result_raw == "fail":
+            self.set_overall_result("Fail")
+
     def get_test_mode(self) -> str:
-        """获取当前选择的测试模式"""
-        mode_text = self.combo_mode.currentText()
-        return "production" if mode_text == "产线模式" else "debug"
+        """获取当前选择的测试模式（内部标识 production / debug）。"""
+        data = self.combo_mode.currentData()
+        if data == "debug":
+            return "debug"
+        return "production"
 
     def set_overall_result(self, result: Optional[str]) -> None:
         """设置整轮测试结果横幅显示。
@@ -361,6 +406,7 @@ class PortPanel(QWidget):
         """
         res = (result or "").strip().lower() if result is not None else ""
         if not res:
+            self._overall_result_raw = None
             self._top_banner.setStyleSheet(
                 """
                 QFrame#topBanner {
@@ -374,12 +420,13 @@ class PortPanel(QWidget):
             self.lbl_overall.setText("")
             return
 
+        self._overall_result_raw = res
         if res == "pass":
             bg = "#1db954"  # 醒目的绿色
-            text = "测试通过"
+            text = self._i18n.t("panel.overall_pass")
         else:
             bg = "#e53935"  # 醒目的红色
-            text = "测试失败"
+            text = self._i18n.t("panel.overall_fail")
 
         self._top_banner.setStyleSheet(
             f"""

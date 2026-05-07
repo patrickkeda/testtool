@@ -21,6 +21,7 @@ from PySide6.QtGui import QFont
 
 from ...testcases.config import TestSequenceConfig, TestStepConfig, ExpectConfig, TestMetadata
 from ...testcases.utils import load_test_sequence, save_test_sequence, apply_mes_debug_station_from_config
+from ..i18n import I18n
 
 
 class SequenceEditor(QMainWindow):
@@ -34,6 +35,10 @@ class SequenceEditor(QMainWindow):
         self.current_sequence: Optional[TestSequenceConfig] = None
         self.current_file_path: Optional[str] = None
         self.is_modified = False
+        if parent is not None and getattr(parent, "_i18n", None) is not None:
+            self._i18n = parent._i18n
+        else:
+            self._i18n = I18n()
         
         self.setWindowTitle("测试序列编辑器")
         self.resize(1200, 800)
@@ -212,11 +217,18 @@ class SequenceEditor(QMainWindow):
         self.edit_retries.wheelEvent = lambda event: None
         
         layout.addRow("超时时间:", self.edit_timeout)
-        layout.addRow("重试次数:", self.edit_retries)
-        
-        # 失败策略
+        layout.addRow("失败额外重试:", self.edit_retries)
+        _retry_hint = QLabel(
+            "共执行 (重试+1) 次；任一次通过即本步通过。仅当 run_once 返回失败或异常时会再试。"
+        )
+        _retry_hint.setWordWrap(True)
+        _retry_hint.setStyleSheet("color: #555; font-size: 11px;")
+        layout.addRow("", _retry_hint)
+
+        # 失败策略（显示中文/当前语言，写入 YAML 仍为 fail/continue/skip/retry）
         self.edit_on_failure = QComboBox()
-        self.edit_on_failure.addItems(["fail", "skip", "retry", "continue"])
+        for v in ("fail", "continue", "skip", "retry"):
+            self.edit_on_failure.addItem(self._i18n.t(f"seq.step_props.on_failure.{v}"), v)
         # 禁用鼠标滚轮修改，避免误操作
         self.edit_on_failure.wheelEvent = lambda event: None
         layout.addRow("失败策略:", self.edit_on_failure)
@@ -456,7 +468,8 @@ class SequenceEditor(QMainWindow):
                 step.type = self.edit_step_type.currentText()
                 step.timeout = self.edit_timeout.value()
                 step.retries = self.edit_retries.value()
-                step.on_failure = self.edit_on_failure.currentText()
+                data = self.edit_on_failure.currentData()
+                step.on_failure = str(data) if data is not None else "fail"
                 
                 # 更新参数
                 params_text = self.edit_params.toPlainText()
@@ -497,7 +510,13 @@ class SequenceEditor(QMainWindow):
         self.edit_step_type.setCurrentText(step.type)
         self.edit_timeout.setValue(step.timeout or 0)
         self.edit_retries.setValue(step.retries)
-        self.edit_on_failure.setCurrentText(step.on_failure)
+        of = (step.on_failure or "fail").lower()
+        for i in range(self.edit_on_failure.count()):
+            if self.edit_on_failure.itemData(i) == of:
+                self.edit_on_failure.setCurrentIndex(i)
+                break
+        else:
+            self.edit_on_failure.setCurrentIndex(0)
         
         # 更新参数
         if step.params:

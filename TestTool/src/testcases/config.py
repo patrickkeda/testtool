@@ -116,7 +116,10 @@ class TestStepConfig(BaseModel):
     type: str = Field(..., description="步骤类型: comm.*, instrument.*, uut.*, mes.*, utility.*, at.*, state_measurement, manual_judgment")
     params: Dict[str, Any] = Field(default_factory=dict, description="步骤参数")
     timeout: Optional[int] = Field(None, description="超时时间(ms)")
-    retries: int = Field(0, description="重试次数")
+    retries: int = Field(
+        0,
+        description="失败复测：额外重试次数，共执行 (retries+1) 次；任一次通过即本步通过",
+    )
     condition: Optional[str] = Field(None, description="执行条件表达式")
     expect: Optional[Union[ExpectConfig, ATExpectConfig]] = Field(None, description="期望结果配置")
     on_failure: str = Field("fail", description="失败策略: fail, skip, retry, continue")

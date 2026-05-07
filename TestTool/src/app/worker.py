@@ -62,6 +62,7 @@ class PortWorker(QObject):
         self._is_paused = False
         self._running = False
         self._start_from_step = None  # 从指定步骤开始执行
+        self._run_single_step_only = False  # 为 True 时只执行一条步骤后结束本轮
         self._test_mode = "production"  # 默认产线模式：'production' 或 'debug'
         self._retest_mode = False  # 复测模式：跳过SN扫描等前置步骤
         self._logger = logging.getLogger(f"{__name__}.{self.port}")
@@ -109,6 +110,12 @@ class PortWorker(QObject):
         """设置从指定步骤开始执行"""
         with self._lock:
             self._start_from_step = step_id
+
+    def set_run_single_step_only(self, enabled: bool) -> None:
+        """为 True 时本轮只执行一条步骤（需配合 set_start_from_step）。"""
+        with self._lock:
+            self._run_single_step_only = bool(enabled)
+            self._logger.info("单步执行模式: %s", self._run_single_step_only)
     
     def set_test_mode(self, mode: str) -> None:
         """设置测试模式：'production' 或 'debug'"""
@@ -153,6 +160,7 @@ class PortWorker(QObject):
             self._is_paused = False
             self._running = False
             self._start_from_step = None
+            self._run_single_step_only = False
 
     # ---- internal --------------------------------------------------------
     def _run(self) -> None:
@@ -196,6 +204,12 @@ class PortWorker(QObject):
             else:
                 self._logger.warning(f"未找到起始步骤 {self._start_from_step}，从开始执行")
                 start_idx = 0
+
+        with self._lock:
+            _single_intro = self._run_single_step_only
+        if _single_intro:
+            sid = steps[start_idx].id if start_idx < len(steps) else "?"
+            self._logger.info("单步测试模式：仅执行步骤 %s（共 %s 步中的 1 步）", sid, len(steps))
         
         n = len(steps)
         self._logger.info(f"总共 {n} 个测试步骤")
@@ -213,11 +227,13 @@ class PortWorker(QObject):
             # 暂停检查
             while self._is_paused and not self._should_stop:
                 time.sleep(0.05)
-            
-            # 复测模式下，跳过SN扫描步骤（例如 type 为 scan.sn）
+
             with self._lock:
                 is_retest = self._retest_mode
-            if is_retest and getattr(step_config, "type", "") == "scan.sn":
+                run_single = self._run_single_step_only
+            
+            # 复测模式下跳过 SN 扫描；单步调试指定跑 scan.sn 时不跳过
+            if is_retest and not run_single and getattr(step_config, "type", "") == "scan.sn":
                 self._logger.info(
                     "复测模式：跳过SN扫描步骤 %s (%s)，使用上下文中的已有SN",
                     step_config.id,
@@ -250,6 +266,8 @@ class PortWorker(QObject):
                 if not step_instance:
                     self._logger.error(f"无法创建步骤实例: {step_config.type}")
                     self.sig_step.emit(step_config.id, "Fail")
+                    if run_single:
+                        break
                     continue
                 
                 # 执行步骤（${var} 与序列 variables / 上下文对齐）
@@ -324,6 +342,8 @@ class PortWorker(QObject):
                         f"步骤 {step_config.id}（第 {idx}/{n} 步）: {step_config.name} - 通过"
                     )
                     self.sig_step.emit(step_config.id, "Pass")
+                    if run_single:
+                        break
                 else:
                     self._logger.warning(
                         f"步骤 {step_config.id}（第 {idx}/{n} 步）: {step_config.name} - 失败: {result.message}"
@@ -360,6 +380,8 @@ class PortWorker(QObject):
                                 "产线模式：步骤失败但 on_failure=%s，继续执行后续步骤",
                                 failure_policy
                             )
+                            if run_single:
+                                break
                             continue
 
                         self._logger.info(
@@ -371,6 +393,8 @@ class PortWorker(QObject):
                     else:
                         # Debug模式：继续执行完所有测试，忽略失败策略
                         self._logger.info("Debug模式：测试失败，继续执行后续步骤")
+                        if run_single:
+                            break
                         continue
                 
             except Exception as e:
@@ -405,6 +429,8 @@ class PortWorker(QObject):
                             "产线模式：步骤异常但 on_failure=%s，继续执行后续步骤",
                             failure_policy
                         )
+                        if run_single:
+                            break
                         continue
 
                     self._logger.info(
@@ -416,6 +442,8 @@ class PortWorker(QObject):
                 else:
                     # Debug模式：继续执行
                     self._logger.info("Debug模式：步骤执行异常，继续执行后续步骤")
+                    if run_single:
+                        break
                     continue
         
         # 测试完成，清理连接
@@ -423,6 +451,10 @@ class PortWorker(QObject):
 
         # 结束一轮执行时进度拉满，避免失败提前退出时界面长期停在例如 92%
         self.sig_progress.emit(100)
+
+        with self._lock:
+            self._start_from_step = None
+            self._run_single_step_only = False
 
         self.sig_status.emit("Completed")
         self._running = False

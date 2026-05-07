@@ -6,7 +6,7 @@ Provides an imperative API to set root, add steps, update status, and clear.
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
 from PySide6.QtCore import Qt
@@ -32,11 +32,19 @@ class SequenceTreeModel:
         self._root_item = None
         self._step_index.clear()
 
-    def set_root(self, label: str, status: str = "Idle") -> QTreeWidgetItem:
+    def set_root(
+        self,
+        label: str,
+        status: str = "Idle",
+        *,
+        header_labels: Optional[List[str]] = None,
+    ) -> QTreeWidgetItem:
         self.clear()
-        # 设置列标题 - 只显示步骤名称和参数
-        self._tree.setHeaderLabels(["测试步骤", "参数"])
-        root = QTreeWidgetItem([label, "测试序列"])
+        if header_labels is not None:
+            self._tree.setHeaderLabels(header_labels)
+        else:
+            self._tree.setHeaderLabels(["测试步骤", "参数", "复测"])
+        root = QTreeWidgetItem([label, status, ""])
         self._tree.addTopLevelItem(root)
         self._tree.expandItem(root)
         self._root_item = root
@@ -49,8 +57,8 @@ class SequenceTreeModel:
         # 提取参数信息
         params_text = self._extract_params_text(step_obj)
         
-        # 创建两列：步骤名称、参数
-        item = QTreeWidgetItem([label, params_text])
+        retry_text = self._format_retry_attempts(step_obj)
+        item = QTreeWidgetItem([label, params_text, retry_text])
         print(f"DEBUG: QTreeWidgetItem created with text: {item.text(0)} - {item.text(1)}")
         # 使用Qt.UserRole来存储step_id，避免覆盖显示文本
         item.setData(0, Qt.UserRole, step_id)
@@ -72,8 +80,6 @@ class SequenceTreeModel:
         # 基本参数 - 只显示数值
         if hasattr(step_obj, 'timeout') and step_obj.timeout:
             params_list.append(str(step_obj.timeout))
-        if hasattr(step_obj, 'retries') and step_obj.retries:
-            params_list.append(str(step_obj.retries))
         if hasattr(step_obj, 'type') and step_obj.type:
             params_list.append(str(step_obj.type))
         
@@ -101,6 +107,14 @@ class SequenceTreeModel:
                 params_list.append(str(step_obj.manual_judgment_config.instruction))
         
         return ", ".join(params_list) if params_list else "无参数"
+
+    @staticmethod
+    def _format_retry_attempts(step_obj) -> str:
+        if not step_obj:
+            return ""
+        r = int(getattr(step_obj, "retries", 0) or 0)
+        n = r + 1
+        return f"共{n}次"
 
     def update_step(self, step_id: str, *, label: Optional[str] = None, status: Optional[str] = None, port: str = "A") -> None:
         print(f"DEBUG: update_step called with step_id='{step_id}', label='{label}', status='{status}', port='{port}'")

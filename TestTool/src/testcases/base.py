@@ -2,6 +2,9 @@
 测试步骤基类模块
 
 提供测试步骤的基础实现，包括重试、超时、异常处理等通用功能。
+
+重试：步骤 YAML 中 ``retries`` 表示「失败后额外再跑几次」；总尝试次数为 ``retries + 1``。
+``run_once`` 返回 ``passed=False`` 或抛异常时都会消耗一次尝试，用尽后返回最后一次失败结果。
 """
 import time
 import logging
@@ -56,7 +59,7 @@ class BaseStep(ABC):
             step_id: 步骤ID
             step_name: 步骤名称
             timeout: 超时时间（秒）
-            retries: 重试次数
+            retries: 失败时的额外重试次数；共执行 (retries + 1) 次，任一次通过即通过，全部失败才判本步失败
             on_failure: 失败策略 (fail/continue/stop_port/stop_all)
         """
         self.step_id = step_id
@@ -83,42 +86,61 @@ class BaseStep(ABC):
         self.logger.info(f"开始执行步骤: {self.step_name}")
         self.logger.debug(f"参数: {params}")
         
-        # 执行重试循环
-        for attempt in range(self.retries + 1):
+        # 执行重试循环（run_once 返回失败或抛异常时，最多共 retries+1 次尝试）
+        max_attempts = self.retries + 1
+        for attempt in range(max_attempts):
             try:
                 if attempt > 0:
-                    self.logger.info(f"重试第 {attempt} 次")
+                    self.logger.info(f"重试第 {attempt} 次（第 {attempt + 1}/{max_attempts} 次尝试）")
                     ctx.sleep_ms(1000)  # 重试前等待1秒
-                
-                # 执行具体步骤逻辑
+
                 result = self.run_once(ctx, params)
-                
-                # 记录执行时间
+
                 duration = time.time() - start_time
                 result.duration = duration
-                
-                # 记录结果
+
                 if result.passed:
                     self.logger.info(f"步骤通过: {result.message}")
-                    # 步骤成功后等待1秒，确保硬件有足够时间响应
+                    if attempt > 0:
+                        self.logger.info(
+                            "步骤在第 %s/%s 次尝试后通过",
+                            attempt + 1,
+                            max_attempts,
+                        )
                     ctx.sleep_ms(1000)
-                else:
-                    self.logger.warning(f"步骤失败: {result.message}")
-                
+                    return result
+
+                self.logger.warning(
+                    "步骤未通过 (尝试 %s/%s): %s",
+                    attempt + 1,
+                    max_attempts,
+                    result.message,
+                )
+                if attempt < self.retries:
+                    self.logger.info(
+                        "约 1s 后重试（剩余 %s 次尝试）",
+                        self.retries - attempt,
+                    )
+                    continue
+
                 return result
-                
+
             except Exception as e:
                 last_error = str(e)
-                self.logger.error(f"步骤执行异常 (尝试 {attempt + 1}/{self.retries + 1}): {e}")
-                
-                # 如果是最后一次尝试，返回失败结果
+                self.logger.error(
+                    "步骤执行异常 (尝试 %s/%s): %s",
+                    attempt + 1,
+                    max_attempts,
+                    e,
+                )
+
                 if attempt == self.retries:
                     duration = time.time() - start_time
                     return StepResult(
                         passed=False,
                         message=f"步骤执行失败: {self.step_name}",
                         error=last_error,
-                        duration=duration
+                        duration=duration,
                     )
         
         # 理论上不会到达这里
