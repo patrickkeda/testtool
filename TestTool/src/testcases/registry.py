@@ -71,7 +71,8 @@ class StepRegistry:
         return None
     
     def create_step(self, step_type: str, step_id: str, step_name: str, 
-                   timeout: int = 30, retries: int = 0, on_failure: str = "fail") -> Optional[BaseStep]:
+                   timeout: int = 30, retries: int = 0, on_failure: str = "fail",
+                   retry_interval_ms: int = 1000) -> Optional[BaseStep]:
         """
         创建步骤实例
         
@@ -82,6 +83,7 @@ class StepRegistry:
             timeout: 超时时间
             retries: 重试次数
             on_failure: 失败策略
+            retry_interval_ms: 失败复测间隔（毫秒）
             
         Returns:
             步骤实例，如果类型不存在则返回None
@@ -97,7 +99,8 @@ class StepRegistry:
                 step_name=step_name,
                 timeout=timeout,
                 retries=retries,
-                on_failure=on_failure
+                on_failure=on_failure,
+                retry_interval_ms=retry_interval_ms,
             )
         except Exception as e:
             logger.error(f"创建步骤实例失败: {e}")
@@ -165,9 +168,12 @@ def get_step_class(step_type: str) -> Optional[Type[BaseStep]]:
 
 
 def create_step(step_type: str, step_id: str, step_name: str, 
-               timeout: int = 30, retries: int = 0, on_failure: str = "fail") -> Optional[BaseStep]:
+               timeout: int = 30, retries: int = 0, on_failure: str = "fail",
+               retry_interval_ms: int = 1000) -> Optional[BaseStep]:
     """创建步骤实例（全局函数）"""
-    return _registry.create_step(step_type, step_id, step_name, timeout, retries, on_failure)
+    return _registry.create_step(
+        step_type, step_id, step_name, timeout, retries, on_failure, retry_interval_ms
+    )
 
 
 def list_step_types() -> list:

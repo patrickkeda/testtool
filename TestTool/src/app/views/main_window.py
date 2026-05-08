@@ -132,9 +132,9 @@ class MainWindow(QMainWindow):
         self._breakpoints = set()  # 存储断点步骤ID
         self._current_breakpoint = None  # 当前暂停的断点
         self._running_ports = set()  # 当前运行的端口
-        # 记录本轮是否出现失败，用于完成时显示 Pass/Fail
-        self._port_a_had_fail = False
-        self._port_b_had_fail = False
+        # 本轮判定为失败的步骤 ID（以最终 StepResult 为准；某步重试通过后会在结果回调里 discard）
+        self._port_a_failed_step_ids: set[str] = set()
+        self._port_b_failed_step_ids: set[str] = set()
         
         # 当前测试序列
         self._current_sequence = None
@@ -886,6 +886,18 @@ class MainWindow(QMainWindow):
                 self._i18n.t("msg.port_thread_busy").format(port=port_label),
             )
             return
+        if not self._is_port_debug_mode(port_short):
+            port_label = (
+                self._i18n.t("panel.title_a")
+                if port_short == "A"
+                else self._i18n.t("panel.title_b")
+            )
+            QMessageBox.information(
+                self,
+                self._i18n.t("dialog.info"),
+                self._i18n.t("msg.debug_need_debug_mode_for_port").format(port=port_label),
+            )
+            return
         self._start_port_with_sequence(
             port_short, self._current_sequence, retest=False, single_step_id=step_id
         )
@@ -923,7 +935,7 @@ class MainWindow(QMainWindow):
             self.port_a.lbl_expect.setText(self._fmt_expect("-"))
             self.port_a.lbl_meas.setText(self._fmt_meas("-"))
             self.port_a.lbl_retries.setText(self._fmt_retries(0))
-            self._port_a_had_fail = False
+            self._port_a_failed_step_ids.clear()
             self._set_port_machine_status("A", "Running")
             if hasattr(self.port_a, "set_overall_result"):
                 self.port_a.set_overall_result(None)
@@ -933,7 +945,7 @@ class MainWindow(QMainWindow):
             self.port_b.lbl_expect.setText(self._fmt_expect("-"))
             self.port_b.lbl_meas.setText(self._fmt_meas("-"))
             self.port_b.lbl_retries.setText(self._fmt_retries(0))
-            self._port_b_had_fail = False
+            self._port_b_failed_step_ids.clear()
             self._set_port_machine_status("B", "Running")
             if hasattr(self.port_b, "set_overall_result"):
                 self.port_b.set_overall_result(None)
@@ -957,6 +969,28 @@ class MainWindow(QMainWindow):
         elif port == "B" and hasattr(self, "_worker_b") and self._worker_b:
             self._worker_b.set_test_mode(mode)
             logger.info(f"Port B 测试模式已设置为: {mode}")
+        self._sync_sequence_debug_tools_policy()
+
+    def _is_port_debug_mode(self, port_short: str) -> bool:
+        """端口是否为调试模式（非产线/工厂模式）。"""
+        if port_short == "A":
+            return self.port_a.get_test_mode() == "debug"
+        if port_short == "B":
+            return self.port_b.get_test_mode() == "debug"
+        return False
+
+    def _any_port_debug_for_sequence_editor_tools(self) -> bool:
+        """步骤属性、断点等：任一端口为调试模式即可。"""
+        return self._is_port_debug_mode("A") or self._is_port_debug_mode("B")
+
+    def _sync_sequence_debug_tools_policy(self) -> None:
+        """全部端口均为产线时清除断点并刷新序列树。"""
+        if not self._any_port_debug_for_sequence_editor_tools():
+            if self._breakpoints:
+                self._breakpoints.clear()
+            self._current_breakpoint = None
+        if self._current_sequence:
+            self._update_sequence_tree(self._current_sequence)
     
     def _create_test_context(self, port: str) -> Optional[Context]:
         """创建测试上下文"""
@@ -1050,6 +1084,16 @@ class MainWindow(QMainWindow):
                     f"utility.ssh_exec / mic_record_ssh 需在步骤里填写 private_key_file、"
                     f"password 或 private_key_env，否则报「未配置认证方式」。"
                 )
+
+            imp_path = (
+                getattr(ssh_cfg, "import_script_path", "")
+                if ssh_cfg is not None
+                else ""
+            )
+            if isinstance(imp_path, str) and imp_path.strip():
+                context.set_data("ssh_import_script_path", imp_path.strip())
+            else:
+                context.set_data("ssh_import_script_path", "")
 
             # 将端口配置中与 PLC / 治具相关的串口参数注入到 Context.state，
             # 供 plc.modbus.* 步骤直接使用（避免每次都手动改 YAML）
@@ -1226,7 +1270,7 @@ class MainWindow(QMainWindow):
     def _on_worker_a_status(self, status: str) -> None:
         # 完成时根据是否失败显示 Pass/Fail
         if status == "Completed":
-            final = "Fail" if self._port_a_had_fail else "Pass"
+            final = "Fail" if self._port_a_failed_step_ids else "Pass"
             self._set_port_machine_status("A", final)
             self.port_a.lbl_step.setText("-")
             self.port_a.lbl_expect.setText(self._fmt_expect("-"))
@@ -1254,10 +1298,10 @@ class MainWindow(QMainWindow):
         # update sequence tree status for matching id (if exists) - Port A
         self.seq_model.update_step(step_id, status=status, port="A")
         
-        # 记录失败状态
+        # 无 StepResult 的失败（无法创建步骤、Worker 层异常等）仅靠 sig_step Fail 标记
         if status == "Fail":
-            self._port_a_had_fail = True
-        
+            self._port_a_failed_step_ids.add(step_id)
+
         # 更新Port A的当前测试项显示（Pass/Fail/Skipped 时清除，避免界面一直停在上一项“运行中”）
         if self._current_sequence:
             for step in self._current_sequence.steps:
@@ -1280,9 +1324,15 @@ class MainWindow(QMainWindow):
     
     def _on_worker_a_step_result(self, step_id: str, result) -> None:
         """Port A 步骤结果处理"""
+        passed = self._coerce_step_passed(result)
+        if passed:
+            self._port_a_failed_step_ids.discard(step_id)
+        else:
+            self._port_a_failed_step_ids.add(step_id)
+
         # 如果步骤返回了SN并且通过，更新PortA的SN缓存，供日志文件命名使用
         try:
-            if getattr(result, "passed", False) and hasattr(result, "data") and isinstance(result.data, dict):
+            if passed and hasattr(result, "data") and isinstance(result.data, dict):
                 sn_value = result.data.get("sn")
                 if isinstance(sn_value, str) and sn_value:
                     self._sn_by_port["PortA"] = sn_value
@@ -1316,7 +1366,7 @@ class MainWindow(QMainWindow):
             unit = ""
         
         # 如果是失败且有错误代码，在value列显示错误代码
-        if not result.passed:
+        if not passed:
             # 获取错误代码，优先从error_code字段，其次从data中
             error_code = result.error_code if hasattr(result, 'error_code') else None
             if not error_code and result.data:
@@ -1342,14 +1392,30 @@ class MainWindow(QMainWindow):
             low=str(low),
             high=str(high),
             unit=unit,
-            result="Pass" if result.passed else "Fail"
+            result="Pass" if passed else "Fail"
         )
-    
+
+    @staticmethod
+    def _coerce_step_passed(result) -> bool:
+        """统一解析 StepResult.passed（兼容 numpy.bool_ 等）。"""
+        if result is None:
+            return False
+        try:
+            return bool(getattr(result, "passed", False))
+        except Exception:
+            return False
+
     def _on_worker_b_step_result(self, step_id: str, result) -> None:
         """Port B 步骤结果处理"""
+        passed = self._coerce_step_passed(result)
+        if passed:
+            self._port_b_failed_step_ids.discard(step_id)
+        else:
+            self._port_b_failed_step_ids.add(step_id)
+
         # 如果步骤返回了SN并且通过，更新PortB的SN缓存，供日志文件命名使用
         try:
-            if getattr(result, "passed", False) and hasattr(result, "data") and isinstance(result.data, dict):
+            if passed and hasattr(result, "data") and isinstance(result.data, dict):
                 sn_value = result.data.get("sn")
                 if isinstance(sn_value, str) and sn_value:
                     self._sn_by_port["PortB"] = sn_value
@@ -1383,7 +1449,7 @@ class MainWindow(QMainWindow):
             unit = ""
         
         # 如果是失败且有错误代码，在value列显示错误代码
-        if not result.passed:
+        if not passed:
             # 获取错误代码，优先从error_code字段，其次从data中
             error_code = result.error_code if hasattr(result, 'error_code') else None
             if not error_code and result.data:
@@ -1409,12 +1475,12 @@ class MainWindow(QMainWindow):
             low=str(low),
             high=str(high),
             unit=unit,
-            result="Pass" if result.passed else "Fail"
+            result="Pass" if passed else "Fail"
         )
     
     def _on_worker_b_status(self, status: str) -> None:
         if status == "Completed":
-            final = "Fail" if self._port_b_had_fail else "Pass"
+            final = "Fail" if self._port_b_failed_step_ids else "Pass"
             self._set_port_machine_status("B", final)
             self.port_b.lbl_step.setText("-")
             self.port_b.lbl_expect.setText(self._fmt_expect("-"))
@@ -1441,10 +1507,9 @@ class MainWindow(QMainWindow):
         # update sequence tree status for matching id (if exists) - Port B
         self.seq_model.update_step(step_id, status=status, port="B")
         
-        # 记录失败状态
         if status == "Fail":
-            self._port_b_had_fail = True
-        
+            self._port_b_failed_step_ids.add(step_id)
+
         # 更新Port B的当前测试项显示（Pass/Fail/Skipped 时清除，避免界面一直停在上一项“运行中”）
         if self._current_sequence:
             for step in self._current_sequence.steps:
@@ -2016,11 +2081,26 @@ class MainWindow(QMainWindow):
             return
         raw = item.data(0, Qt.UserRole)
         step_id = str(raw).strip() if raw is not None else ""
-        if step_id:
-            self._open_step_properties_for_step_id(step_id)
+        if not step_id:
+            return
+        if not self._any_port_debug_for_sequence_editor_tools():
+            QMessageBox.information(
+                self,
+                self._i18n.t("dialog.info"),
+                self._i18n.t("msg.debug_need_any_port_for_editor"),
+            )
+            return
+        self._open_step_properties_for_step_id(step_id)
 
     def _open_step_properties_for_step_id(self, step_id: str) -> None:
         """可视化编辑单步 retries / 超时 / 失败策略，并可写回 YAML。"""
+        if not self._any_port_debug_for_sequence_editor_tools():
+            QMessageBox.information(
+                self,
+                self._i18n.t("dialog.info"),
+                self._i18n.t("msg.debug_need_any_port_for_editor"),
+            )
+            return
         if not self._current_sequence:
             QMessageBox.warning(self, self._i18n.t("dialog.info"), self._i18n.t("msg.need_sequence"))
             return
@@ -2058,51 +2138,60 @@ class MainWindow(QMainWindow):
             return
             
         menu = QMenu(self)
-        act_props = menu.addAction(self._i18n.t("seq.menu.step_props"))
-        act_props.triggered.connect(lambda: self._open_step_properties_for_step_id(step_id))
-        menu.addSeparator()
+        editor_on = self._any_port_debug_for_sequence_editor_tools()
+        if editor_on:
+            act_props = menu.addAction(self._i18n.t("seq.menu.step_props"))
+            act_props.triggered.connect(lambda: self._open_step_properties_for_step_id(step_id))
+            menu.addSeparator()
 
-        act_run_a = menu.addAction(self._i18n.t("seq.context.run_only_step_a"))
-        act_run_a.triggered.connect(lambda: self._run_only_this_step("A", step_id))
-        act_run_b = menu.addAction(self._i18n.t("seq.context.run_only_step_b"))
-        act_run_b.triggered.connect(lambda: self._run_only_this_step("B", step_id))
-        menu.addSeparator()
+        if self._is_port_debug_mode("A"):
+            act_run_a = menu.addAction(self._i18n.t("seq.context.run_only_step_a"))
+            act_run_a.triggered.connect(lambda: self._run_only_this_step("A", step_id))
+        if self._is_port_debug_mode("B"):
+            act_run_b = menu.addAction(self._i18n.t("seq.context.run_only_step_b"))
+            act_run_b.triggered.connect(lambda: self._run_only_this_step("B", step_id))
 
-        # 断点操作
-        if step_id in self._breakpoints:
-            clear_action = menu.addAction(self._i18n.t("seq.context.clear_bp"))
-            clear_action.triggered.connect(lambda: self._clear_breakpoint(step_id))
-        else:
-            set_action = menu.addAction(self._i18n.t("seq.context.set_bp"))
-            set_action.triggered.connect(lambda: self._set_breakpoint(step_id))
-            
-        # 继续操作 - 根据运行端口显示
-        if self._current_breakpoint == step_id:
-            if "A" in self._running_ports:
-                continue_action = menu.addAction(self._i18n.t("seq.context.continue_a"))
-                continue_action.triggered.connect(lambda: self._continue_from_breakpoint("A"))
-            if "B" in self._running_ports:
-                continue_action = menu.addAction(self._i18n.t("seq.context.continue_b"))
-                continue_action.triggered.connect(lambda: self._continue_from_breakpoint("B"))
-                
-        # 重新开始操作 - 从断点处重新开始
-        if step_id in self._breakpoints:
-            if "A" in self._running_ports:
-                restart_action = menu.addAction(self._i18n.t("seq.context.restart_a"))
-                restart_action.triggered.connect(lambda: self._restart_from_breakpoint("A", step_id))
-            if "B" in self._running_ports:
-                restart_action = menu.addAction(self._i18n.t("seq.context.restart_b"))
-                restart_action.triggered.connect(lambda: self._restart_from_breakpoint("B", step_id))
-                
-        # 跳过断点操作 - 跳过当前断点，从下一个步骤开始
-        if step_id in self._breakpoints and self._current_breakpoint == step_id:
-            if "A" in self._running_ports:
-                skip_action = menu.addAction(self._i18n.t("seq.context.skip_a"))
-                skip_action.triggered.connect(lambda: self._skip_breakpoint("A", step_id))
-            if "B" in self._running_ports:
-                skip_action = menu.addAction(self._i18n.t("seq.context.skip_b"))
-                skip_action.triggered.connect(lambda: self._skip_breakpoint("B", step_id))
-                
+        if editor_on:
+            menu.addSeparator()
+            # 断点操作
+            if step_id in self._breakpoints:
+                clear_action = menu.addAction(self._i18n.t("seq.context.clear_bp"))
+                clear_action.triggered.connect(lambda: self._clear_breakpoint(step_id))
+            else:
+                set_action = menu.addAction(self._i18n.t("seq.context.set_bp"))
+                set_action.triggered.connect(lambda: self._set_breakpoint(step_id))
+
+            # 继续操作 - 根据运行端口显示
+            if self._current_breakpoint == step_id:
+                if "A" in self._running_ports:
+                    continue_action = menu.addAction(self._i18n.t("seq.context.continue_a"))
+                    continue_action.triggered.connect(lambda: self._continue_from_breakpoint("A"))
+                if "B" in self._running_ports:
+                    continue_action = menu.addAction(self._i18n.t("seq.context.continue_b"))
+                    continue_action.triggered.connect(lambda: self._continue_from_breakpoint("B"))
+
+            # 重新开始操作 - 从断点处重新开始
+            if step_id in self._breakpoints:
+                if "A" in self._running_ports:
+                    restart_action = menu.addAction(self._i18n.t("seq.context.restart_a"))
+                    restart_action.triggered.connect(lambda: self._restart_from_breakpoint("A", step_id))
+                if "B" in self._running_ports:
+                    restart_action = menu.addAction(self._i18n.t("seq.context.restart_b"))
+                    restart_action.triggered.connect(lambda: self._restart_from_breakpoint("B", step_id))
+
+            # 跳过断点操作 - 跳过当前断点，从下一个步骤开始
+            if step_id in self._breakpoints and self._current_breakpoint == step_id:
+                if "A" in self._running_ports:
+                    skip_action = menu.addAction(self._i18n.t("seq.context.skip_a"))
+                    skip_action.triggered.connect(lambda: self._skip_breakpoint("A", step_id))
+                if "B" in self._running_ports:
+                    skip_action = menu.addAction(self._i18n.t("seq.context.skip_b"))
+                    skip_action.triggered.connect(lambda: self._skip_breakpoint("B", step_id))
+
+        if not menu.actions():
+            self.statusBar().showMessage(self._i18n.t("msg.debug_context_no_actions"), 5000)
+            return
+
         menu.exec_(self.sequence_tree.mapToGlobal(position))
     
     def _set_breakpoint(self, step_id: str):

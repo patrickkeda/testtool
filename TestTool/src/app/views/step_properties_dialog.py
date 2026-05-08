@@ -1,5 +1,5 @@
 """
-主界面步骤属性对话框：可视化配置单步复测（retries）、超时、失败策略。
+主界面步骤属性对话框：可视化配置失败复测次数、复测间隔、超时、失败策略。
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from ...testcases.config import TestSequenceConfig, TestStepConfig
 
 
 class StepPropertiesDialog(QDialog):
-    """编辑单步 retries / timeout / on_failure，可选写回 YAML。"""
+    """编辑 retries / retry_interval_ms / timeout / on_failure，可选写回 YAML。"""
 
     def __init__(
         self,
@@ -65,6 +65,17 @@ class StepPropertiesDialog(QDialog):
         form.addRow(
             "失败额外重试" if not translator else translator.t("seq.step_props.retries"),
             self.sp_retries,
+        )
+
+        self.sp_retry_interval = QSpinBox()
+        self.sp_retry_interval.setRange(0, 3_600_000)
+        self.sp_retry_interval.setSingleStep(100)
+        self.sp_retry_interval.setSuffix(" ms")
+        self.sp_retry_interval.wheelEvent = lambda e: None
+        self.sp_retry_interval.setValue(int(getattr(step, "retry_interval_ms", 1000) or 0))
+        form.addRow(
+            "复测间隔" if not translator else translator.t("seq.step_props.retry_interval"),
+            self.sp_retry_interval,
         )
 
         self.sp_timeout = QSpinBox()
@@ -128,6 +139,7 @@ class StepPropertiesDialog(QDialog):
 
     def _on_accept(self) -> None:
         self._step.retries = self.sp_retries.value()
+        self._step.retry_interval_ms = self.sp_retry_interval.value()
         self._step.timeout = self.sp_timeout.value()
         data = self.cb_on_failure.currentData()
         self._step.on_failure = str(data) if data is not None else "fail"

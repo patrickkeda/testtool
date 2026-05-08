@@ -169,6 +169,18 @@ class PortWorker(QObject):
             self._logger.error("没有设置测试序列")
             self.sig_status.emit("Idle")
             return
+
+        with self._lock:
+            _single_blocked = self._run_single_step_only and self._test_mode == "production"
+        if _single_blocked:
+            self._logger.warning("产线模式下禁止单步执行，已取消本轮")
+            with self._lock:
+                self._start_from_step = None
+                self._run_single_step_only = False
+                self._running = False
+            self.sig_progress.emit(0)
+            self.sig_status.emit("Idle")
+            return
         
         self.sig_status.emit("Preparing")
         self._logger.info("准备执行测试...")
@@ -185,6 +197,18 @@ class PortWorker(QObject):
                     self._logger.info(f"注入序列变量: {key} = {value}")
         except Exception as e:  # noqa: BLE001
             self._logger.warning(f"注入序列变量失败: {e}")
+
+        # 配置「SSH → 远程上传脚本」非空时，覆盖序列变量 pvt_script_path（PVT 等序列）
+        try:
+            _imp = self.context.get_data("ssh_import_script_path", "")
+            if isinstance(_imp, str) and _imp.strip():
+                self.context.set_data("pvt_script_path", _imp.strip())
+                self._logger.info(
+                    "已使用配置 ssh.import_script_path 覆盖 pvt_script_path: %s",
+                    _imp.strip(),
+                )
+        except Exception as e:  # noqa: BLE001
+            self._logger.warning(f"应用 ssh.import_script_path 覆盖失败: {e}")
         
         # 获取步骤列表
         steps = self._sequence.steps
@@ -243,6 +267,18 @@ class PortWorker(QObject):
                 self.sig_progress.emit(int(idx * 100 / n))
                 continue
 
+            # 单步调试：不执行任何 MES 步骤（避免成功/失败均触网）
+            _stype = str(getattr(step_config, "type", "") or "")
+            if run_single and _stype.startswith("mes."):
+                self._logger.info(
+                    "单步调试模式：跳过 MES 步骤 %s (%s)",
+                    step_config.id,
+                    step_config.name,
+                )
+                self.sig_step.emit(step_config.id, "Skipped")
+                self.sig_progress.emit(int(idx * 100 / n))
+                break
+
             # 执行步骤
             self._logger.info(
                 f"执行步骤 {step_config.id}（第 {idx}/{n} 步）: {step_config.name}"
@@ -254,13 +290,17 @@ class PortWorker(QObject):
                 _st_timeout = getattr(step_config, "timeout", None)
                 if _st_timeout is None:
                     _st_timeout = 30
+                _retry_gap = getattr(step_config, "retry_interval_ms", None)
+                if _retry_gap is None:
+                    _retry_gap = 1000
                 step_instance = create_step(
                     step_type=step_config.type,
                     step_id=step_config.id,
                     step_name=step_config.name,
                     timeout=_st_timeout,
                     retries=step_config.retries,
-                    on_failure=step_config.on_failure
+                    on_failure=step_config.on_failure,
+                    retry_interval_ms=int(_retry_gap),
                 )
                 
                 if not step_instance:
@@ -468,6 +508,10 @@ class PortWorker(QObject):
         failed_result: StepResult,
     ) -> bool:
         """失败后立即执行 MesEnd 上传 FAIL。"""
+        with self._lock:
+            if self._run_single_step_only:
+                self._logger.info("单步调试模式：跳过失败直跳 MesEnd（不上报 MES）")
+                return False
         try:
             mes_end_cfg = next((s for s in steps if getattr(s, "type", "") == "mes.upload_result"), None)
             if not mes_end_cfg:
@@ -487,6 +531,9 @@ class PortWorker(QObject):
                 err,
             )
             self.sig_step.emit(mes_end_cfg.id, "Running")
+            _mes_gap = getattr(mes_end_cfg, "retry_interval_ms", None)
+            if _mes_gap is None:
+                _mes_gap = 1000
             mes_step = create_step(
                 step_type=mes_end_cfg.type,
                 step_id=mes_end_cfg.id,
@@ -494,6 +541,7 @@ class PortWorker(QObject):
                 timeout=mes_end_cfg.timeout,
                 retries=mes_end_cfg.retries,
                 on_failure=mes_end_cfg.on_failure,
+                retry_interval_ms=int(_mes_gap),
             )
             if not mes_step:
                 self._logger.error("失败直跳 MesEnd 失败：无法创建 mes.upload_result 实例")

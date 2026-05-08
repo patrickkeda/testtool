@@ -524,6 +524,22 @@ class _SshSettingsPage(QWidget):
         self.lbl_hint = QLabel(self._t("config.ssh.hint"), self)
         self.lbl_hint.setWordWrap(True)
         form.addRow(self.lbl_hint)
+
+        self.ed_import_script = QLineEdit(self)
+        self.ed_import_script.setPlaceholderText("C:/Users/.../pvt_stress_test_v3.sh")
+        row_imp = QHBoxLayout()
+        row_imp.addWidget(self.ed_import_script, stretch=1)
+        self.btn_browse_import = QPushButton(self._t("config.ssh.browse"))
+        self.btn_browse_import.clicked.connect(self._on_browse_import_script)
+        row_imp.addWidget(self.btn_browse_import)
+        wrap_imp = QWidget(self)
+        wrap_imp.setLayout(row_imp)
+        self._lbl_import_script = QLabel(self._t("config.ssh.import_script"), self)
+        form.addRow(self._lbl_import_script, wrap_imp)
+        self.lbl_import_script_hint = QLabel(self._t("config.ssh.import_script_hint"), self)
+        self.lbl_import_script_hint.setWordWrap(True)
+        form.addRow(self.lbl_import_script_hint)
+
         layout.addWidget(self.grp)
         layout.addStretch(1)
 
@@ -537,11 +553,24 @@ class _SshSettingsPage(QWidget):
         if path:
             self.ed_private_key.setText(path)
 
+    def _on_browse_import_script(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            self._t("config.ssh.import_script"),
+            self.ed_import_script.text() or "",
+            "Shell (*.sh);;All (*.*)",
+        )
+        if path:
+            self.ed_import_script.setText(path)
+
     def apply_retranslate(self) -> None:
         self.grp.setTitle(self._t("config.ssh.group"))
         self._lbl_private_key.setText(self._t("config.ssh.private_key"))
         self.btn_browse.setText(self._t("config.ssh.browse"))
         self.lbl_hint.setText(self._t("config.ssh.hint"))
+        self._lbl_import_script.setText(self._t("config.ssh.import_script"))
+        self.btn_browse_import.setText(self._t("config.ssh.browse"))
+        self.lbl_import_script_hint.setText(self._t("config.ssh.import_script_hint"))
 
 
 class ConfigDialog(QDialog):
@@ -729,8 +758,12 @@ class ConfigDialog(QDialog):
             self.page_ssh.ed_private_key.setText(
                 getattr(ssh_cfg, "private_key_path", "") or ""
             )
+            self.page_ssh.ed_import_script.setText(
+                getattr(ssh_cfg, "import_script_path", "") or ""
+            )
         else:
             self.page_ssh.ed_private_key.clear()
+            self.page_ssh.ed_import_script.clear()
     
     def _load_port_config(self, page, port_cfg) -> None:
         """加载单个端口的配置"""
@@ -813,6 +846,7 @@ class ConfigDialog(QDialog):
 
         if getattr(cfg, "ssh", None) is not None:
             cfg.ssh.private_key_path = self.page_ssh.ed_private_key.text().strip()
+            cfg.ssh.import_script_path = self.page_ssh.ed_import_script.text().strip()
         
         self._service._config = cfg
 
@@ -932,6 +966,7 @@ class ConfigDialog(QDialog):
 
         if hasattr(self, "page_ssh"):
             self.page_ssh.ed_private_key.clear()
+            self.page_ssh.ed_import_script.clear()
         
         # 显示成功消息
         QMessageBox.information(self, "重置完成", "所有配置已重置为默认值")

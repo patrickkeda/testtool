@@ -388,10 +388,16 @@ if (Test-Path $distExe) {
     } else {
         Write-Host "[WARNING] client directory was not found" -ForegroundColor Yellow
     }
+    $hqmesPath = Join-Path $projectRoot ("dist\{0}\_internal\bin\HQMES.dll" -f $outputName)
+    if (Test-Path $hqmesPath) {
+        Write-Host "[OK] MES HQMES.dll is included (_internal\bin)" -ForegroundColor Green
+    } else {
+        Write-Host "[WARNING] HQMES.dll was not found under _internal\bin (place bin\HQMES.dll or build\mes_dll\HQMES.dll before build)" -ForegroundColor Yellow
+    }
     if ((Test-Path $canDllPath1) -or (Test-Path $canDllPath2) -or (Test-Path $canDllPath3)) {
         Write-Host "[OK] CAN DLL is included" -ForegroundColor Green
     } else {
-        Write-Host "[WARNING] CAN DLL was not found in packaged output" -ForegroundColor Yellow
+        Write-Host "[WARNING] CAN DLL was not found in packaged output (place DLLs in test\canapp or build\can_dll)" -ForegroundColor Yellow
     }
 }
 

@@ -37,6 +37,7 @@ class TestStepConfig(BaseModel):
     type: str = Field(..., description="步骤类型（用于注册表查找）")
     timeout: int = Field(30, description="超时时间（秒）")
     retries: int = Field(0, description="重试次数")
+    retry_interval_ms: int = Field(1000, ge=0, description="失败复测间隔（毫秒）")
     on_failure: str = Field("fail", description="失败策略: fail/continue/stop_port/stop_all")
     params: Dict[str, Any] = Field(default_factory=dict, description="业务参数")
     

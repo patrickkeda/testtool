@@ -21,6 +21,11 @@ remote_workdir 缺省为脚本所在目录（无法解析时为 ``/app``）；re
 若上传前已 remount 且 ``remote_remount_app_rw`` 也为 true，构造执行命令时会省略重复的 ``mount``。
 upload_local_file 仅支持与 invoke_remote_script=true 组合；与 command、stdin 模式互斥。
 
+invoke_remote_script 模式下可设 ``invoke_remote_background=true``：远端用 ``nohup ./脚本 … >>日志`` 启动压测，
+SSH 会话侧 ``tail -f`` 同一日志以继续流式匹配 ``pass_on_stdout_regex``；断开 SSH（如拔掉 Hub）后，
+``nohup`` 子进程仍在板上运行。可选 ``invoke_remote_background_log`` 指定日志路径（默认
+``/tmp/<脚本名>.testtool_nohup.log``）。仅与 ``invoke_remote_script=true`` 组合。
+
 长耗时脚本在远端 sleep 时 SSH 信道可能长时间无数据，易被 NAT/防火墙断开；可设 keepalive_sec（默认 10）
 启用 Paramiko 传输层保活，降低「远程主机强迫关闭连接」(Win 10054) 与退出码 -1 的概率。
 
@@ -36,15 +41,55 @@ from __future__ import annotations
 
 import io
 import os
+import posixpath
 import re
 import shlex
 import socket
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ...base import BaseStep, StepResult
 from ...context import Context
+
+
+def _resolve_local_path_for_ssh(raw: str) -> str:
+    """解析本机脚本/待上传文件路径（与 engineer transfer 逻辑一致）。
+
+    相对路径时依次尝试：原路径、cwd、打包 exe 目录与 ``_internal``、TestTool 根目录
+    （本文件位于 ``src/testcases/steps/cases``，向上四级到项目根）。
+    """
+    s = (raw or "").strip()
+    if not s:
+        return s
+    p = Path(s).expanduser()
+    try:
+        if p.is_file():
+            return str(p.resolve())
+    except OSError:
+        pass
+    if p.is_absolute():
+        return s
+    candidates: List[Path] = [Path.cwd() / s]
+    if getattr(sys, "frozen", False):
+        base = Path(sys.executable).resolve().parent
+        candidates.append(base / s)
+        candidates.append(base / "_internal" / s)
+    try:
+        here = Path(__file__).resolve().parent
+        tt_root = here.parent.parent.parent.parent
+        candidates.append(tt_root / s)
+        candidates.append(here / s)
+    except OSError:
+        pass
+    for c in candidates:
+        try:
+            if c.is_file():
+                return str(c.resolve())
+        except OSError:
+            continue
+    return s
 
 
 def resolve_private_key_file_path(params: Dict[str, Any], ctx: Context) -> str:
@@ -96,6 +141,8 @@ def _build_remote_script_invoke_command(
     remote_workdir: str,
     remount_app_rw: bool,
     script_args: str,
+    invoke_remote_background: bool = False,
+    invoke_remote_background_log: str = "",
 ) -> str:
     """构造在远端执行板上已有脚本的 bash -lc 单行命令（参数经 shlex 转义）。"""
     p = Path(remote_script_path.replace("\\", "/"))
@@ -117,7 +164,24 @@ def _build_remote_script_invoke_command(
     arg_part = ""
     if arg_tokens:
         arg_part = " " + " ".join(shlex.quote(t) for t in arg_tokens)
-    segs.append(f"exec {shlex.quote('./' + name)}{arg_part}")
+    run_target = f"{shlex.quote('./' + name)}{arg_part}"
+    if invoke_remote_background:
+        raw_log = (invoke_remote_background_log or "").strip()
+        log_abs = (
+            raw_log if raw_log else posixpath.join("/tmp", f"{name}.testtool_nohup.log")
+        )
+        log_q = shlex.quote(log_abs)
+        # 使用 POSIX 的 tail -f（避免部分 BusyBox/旧 coreutils 对 tail -n +1 报错导致会话立刻以 1 退出）；
+        # sleep 让 nohup 子进程先打开日志，减少首行丢失；exec 使 SSH 退出码仅反映 tail。
+        segs.append(
+            f": > {log_q} && "
+            f"nohup {run_target} >>{log_q} 2>&1 < /dev/null & "
+            f"echo PVT_TESTTOOL_REMOTE_BG_PID=$! && "
+            f"sleep 0.4 && "
+            f"exec tail -f {log_q}"
+        )
+    else:
+        segs.append(f"exec {run_target}")
     inner = " && ".join(segs)
     return "bash -lc " + shlex.quote(inner)
 
@@ -145,6 +209,19 @@ class SshExecStep(BaseStep):
         upload_local_file = self.get_param_str(params, "upload_local_file", "").strip()
 
         invoke_remote = self.get_param_bool(params, "invoke_remote_script", False)
+        invoke_remote_background = self.get_param_bool(
+            params, "invoke_remote_background", False
+        )
+        invoke_remote_background_log = self.get_param_str(
+            params, "invoke_remote_background_log", ""
+        ).strip()
+        if invoke_remote_background and not invoke_remote:
+            return StepResult(
+                passed=False,
+                message="参数冲突",
+                error="invoke_remote_background 仅支持与 invoke_remote_script=true 组合",
+                error_code="SSH_EXEC_BAD_PARAMS",
+            )
 
         upload_local_abs: Optional[str] = None
         if upload_local_file:
@@ -155,7 +232,10 @@ class SshExecStep(BaseStep):
                     error="upload_local_file 已设置时需 invoke_remote_script=true（SFTP 上传到远端后再 chmod+执行）",
                     error_code="SSH_EXEC_BAD_PARAMS",
                 )
-            ul_p = Path(upload_local_file).expanduser()
+            ul_resolved = _resolve_local_path_for_ssh(upload_local_file)
+            ul_p = Path(ul_resolved).expanduser()
+            if ul_resolved != upload_local_file.strip():
+                ctx.log_info(f"本机待上传路径解析: {upload_local_file!r} -> {ul_p}")
             if not ul_p.is_file():
                 return StepResult(
                     passed=False,
@@ -194,6 +274,8 @@ class SshExecStep(BaseStep):
                     remote_workdir=rwd,
                     remount_app_rw=remount_rw,
                     script_args=script_args,
+                    invoke_remote_background=invoke_remote_background,
+                    invoke_remote_background_log=invoke_remote_background_log,
                 )
             except ValueError as e:
                 return StepResult(
@@ -364,13 +446,66 @@ class SshExecStep(BaseStep):
                             error=err_d or out_d or f"exit {st}",
                             error_code="SSH_EXEC_UPLOAD_REMOUNT",
                         )
+                r_dest_norm = str(r_dest).strip().replace("\\", "/")
+                parent = posixpath.dirname(r_dest_norm)
+                if parent:
+                    ctx.log_info(f"SFTP 确保远端父目录存在: {parent}")
+                    _mkdir_inner = "mkdir -p " + shlex.quote(parent)
+                    _si_m, _so_m, _se_m = client.exec_command(
+                        "bash -lc " + shlex.quote(_mkdir_inner),
+                        timeout=min(60, max(20, exec_timeout)),
+                    )
+                    try:
+                        _si_m.close()
+                    except Exception:
+                        pass
+                    st_m = _so_m.channel.recv_exit_status()
+                    err_m = _se_m.read().decode("utf-8", errors="replace").strip()
+                    out_m = _so_m.read().decode("utf-8", errors="replace").strip()
+                    if st_m != 0:
+                        return StepResult(
+                            passed=False,
+                            message="SFTP 上传前创建远端目录失败",
+                            error=err_m or out_m or f"exit {st_m}",
+                            error_code="SSH_EXEC_UPLOAD_MKDIR",
+                        )
+                try:
+                    local_sz = Path(upload_local_abs).stat().st_size
+                except OSError as e:
+                    return StepResult(
+                        passed=False,
+                        message="无法读取本机待上传文件大小",
+                        error=str(e),
+                        error_code="SSH_EXEC_UPLOAD_LOCAL_STAT",
+                    )
                 try:
                     sftp = client.open_sftp()
                     try:
                         ctx.log_info(
-                            f"SFTP 上传 {upload_local_abs} → {username}@{host}:{r_dest}"
+                            f"SFTP 上传 {upload_local_abs} ({local_sz} 字节) → "
+                            f"{username}@{host}:{r_dest_norm}"
                         )
-                        sftp.put(upload_local_abs, r_dest)
+                        sftp.put(upload_local_abs, r_dest_norm)
+                        try:
+                            rst = sftp.stat(r_dest_norm)
+                            rsz = int(getattr(rst, "st_size", -1))
+                        except OSError as se:
+                            return StepResult(
+                                passed=False,
+                                message="SFTP 上传后无法 stat 远端文件",
+                                error=str(se),
+                                error_code="SSH_EXEC_SFTP_STAT",
+                            )
+                        if rsz != local_sz:
+                            return StepResult(
+                                passed=False,
+                                message="SFTP 上传后远端大小与本地不一致",
+                                error=f"本地 {local_sz} 字节, 远端 {rsz} 字节",
+                                error_code="SSH_EXEC_SFTP_SIZE_MISMATCH",
+                            )
+                        ctx.log_info(
+                            f"SFTP 校验通过: 远端 {r_dest_norm} 大小 {rsz} 字节"
+                        )
                     finally:
                         sftp.close()
                 except Exception as e:  # noqa: BLE001
@@ -381,8 +516,17 @@ class SshExecStep(BaseStep):
                         error_code="SSH_EXEC_SFTP_PUT",
                     )
 
+            elif invoke_remote:
+                ctx.log_info(
+                    "已启用 invoke_remote_script，但未设置 upload_local_file："
+                    "不会覆盖远端文件，将直接执行 remote_script_path 指向的板上脚本。"
+                )
+
             if local_script_file:
-                script_path = Path(local_script_file).expanduser()
+                script_resolved = _resolve_local_path_for_ssh(local_script_file)
+                script_path = Path(script_resolved).expanduser()
+                if script_resolved != local_script_file.strip():
+                    ctx.log_info(f"本机脚本路径解析: {local_script_file!r} -> {script_path}")
                 if not script_path.is_file():
                     return StepResult(
                         passed=False,
@@ -417,6 +561,11 @@ class SshExecStep(BaseStep):
                     stdin.write(script_body[off : off + bs])
                 stdin.channel.shutdown_write()
             else:
+                if invoke_remote_background:
+                    ctx.log_info(
+                        "invoke_remote_background: 远端以 nohup 执行 ./ 脚本并 tail -f 日志；"
+                        "断开 SSH 后压测仍在板上运行"
+                    )
                 ctx.log_info(f"SSH 执行: {command}")
                 stdin, stdout, stderr = client.exec_command(command, timeout=exec_timeout)
                 _ = stdin
@@ -509,10 +658,16 @@ class SshExecStep(BaseStep):
                         "stderr": err_t,
                         "matched_regex": pass_regex_str,
                         "disconnect_early": True,
+                        "invoke_remote_background": invoke_remote_background,
                     }
+                    early_msg = (
+                        "SSH 已匹配输出条件（已提前断开）；远端压测由 nohup 在后台运行，拔 Hub/断线后仍继续"
+                        if invoke_remote_background
+                        else "SSH 已匹配输出条件（已提前断开，远端进程可能被终止）"
+                    )
                     return StepResult(
                         passed=True,
-                        message="SSH 已匹配输出条件（已提前断开，远端进程可能被终止）",
+                        message=early_msg,
                         data=data_early,
                     )
 
@@ -584,11 +739,17 @@ class SshExecStep(BaseStep):
                 }
 
                 if not matched:
+                    hint = ""
+                    if invoke_remote_background and exit_code not in (0, -1):
+                        hint = (
+                            "（invoke_remote_background：若会话很快结束，多为 tail 失败或压测脚本立即退出；"
+                            "请查看 stderr 与板上 nohup 日志）"
+                        )
                     return StepResult(
                         passed=False,
                         message=(
                             f"在 {exec_timeout}s 内未匹配 pass_on_stdout_regex: "
-                            f"{pass_regex_str!r}"
+                            f"{pass_regex_str!r}{hint}"
                         ),
                         error=err_t or out_t or f"exit {exit_code}",
                         error_code="SSH_EXEC_PASS_REGEX_TIMEOUT",

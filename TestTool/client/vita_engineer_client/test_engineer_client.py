@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Dict, List, Optional, Callable, Any, Tuple, Union
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
@@ -592,6 +593,49 @@ async def test_single_case(test_case: str, robot_ip: str = "192.168.126.2", port
 register_all_handlers(command_registry)
 
 
+def resolve_engineer_local_file_path(source_path: str) -> str:
+    """解析 PC 端路径（transfer op=2 / motor_ota 等）。
+
+    序列里常用相对路径（如 ``client/...``、``Result/...``）。若当前工作目录不是
+    TestTool 根目录，或已打包为 exe（资源在 ``_internal``），直接 ``exists`` 会失败。
+    依次尝试：原路径、``cwd``、exe 目录、``exe/_internal``、本文件所在仓库根目录。
+    """
+    raw = (source_path or "").strip()
+    if not raw:
+        return raw
+    p = Path(raw)
+    try:
+        if p.is_file() or p.is_dir():
+            return str(p.resolve())
+    except OSError:
+        pass
+    candidates: List[Path] = []
+    if p.is_absolute():
+        candidates.append(p)
+    else:
+        candidates.append(Path.cwd() / raw)
+        if getattr(sys, "frozen", False):
+            base = Path(sys.executable).resolve().parent
+            candidates.append(base / raw)
+            candidates.append(base / "_internal" / raw)
+        try:
+            here = Path(__file__).resolve().parent
+            tt_root = here.parent.parent
+            candidates.append(tt_root / raw)
+            candidates.append(here / raw)
+        except OSError:
+            pass
+    for c in candidates:
+        try:
+            if c.exists():
+                resolved = str(c.resolve())
+                print(f"   本机路径解析: {source_path!r} -> {resolved}")
+                return resolved
+        except OSError:
+            continue
+    return raw
+
+
 async def transfer_command_handler(client: EngineerServiceClient, params: TestCaseParams, command_template: CommandTemplate) -> bool:
     """Transfer命令特殊处理器
     
@@ -607,7 +651,8 @@ async def transfer_command_handler(client: EngineerServiceClient, params: TestCa
             if not source_path:
                 print("错误: 未指定源文件路径 (addrA)")
                 return False
-            
+
+            source_path = resolve_engineer_local_file_path(source_path)
             if not os.path.exists(source_path):
                 print(f"错误: 源文件/文件夹不存在: {source_path}")
                 return False
@@ -708,7 +753,8 @@ async def motor_ota_command_handler(client: EngineerServiceClient, params: TestC
         if not file_path:
             print("错误: 未指定固件文件路径 (file)")
             return False
-        
+
+        file_path = resolve_engineer_local_file_path(file_path)
         if not os.path.exists(file_path):
             print(f"错误: 固件文件不存在: {file_path}")
             return False

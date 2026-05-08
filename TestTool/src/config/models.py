@@ -229,6 +229,10 @@ class SshConfig(BaseModel):
         "",
         description="默认私钥文件路径；步骤未指定 private_key_file 且未用环境变量/密码时使用",
     )
+    import_script_path: str = Field(
+        "",
+        description="SFTP/ssh_exec 上传用本地脚本路径；非空时运行序列会覆盖变量 pvt_script_path（如 PVT 序列）",
+    )
 
 
 class PrinterConfig(BaseModel):

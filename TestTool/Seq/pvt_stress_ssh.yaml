@@ -1,23 +1,37 @@
 version: '1.0'
 metadata:
   name: pvt-stress-ssh
-  description: 'PVT 压测：MES→扫码→Ping→SFTP 上传脚本至 /app→SSH 执行（见 cycle n/m start 即过）→拔 Hub→120min→上传'
+  description: 'PVT 压测：MES→扫码→Ping→SFTP 上传 v3 脚本至 /app→SSH 执行→校验 v3 落盘→拔 Hub→120min→上传'
   author: 'TestTool'
   created_at: '2026-05-06T00:00:00.000000'
   product: Vita01
   station: STRESS
   version: '1.0'
 
-# SSH 使用 Paramiko，主机须为可解析 IP；私钥用户须与 MobaXterm 一致（如 root）。
-# SSH 步骤：用正则匹配「cycle n/m start」；当前为匹配到即进入下一步（pass_regex_disconnect_early: true），会断开 SSH。
-# 若要在板上跑满整轮压测再进下一步，将该参数改为 false。
+# —— 与产线期望流程对照（本 seq）——
+# 1) MES：step_mes_0 heartbeat → step_1 扫码 SN → step_mes_1 get_work_order
+# 2) 连通 192.168.126.2：step_ping_robot ping robot_ip；SSH 在 step_pvt_stress 内连 pvt_ssh_host（默认同 IP）
+# 3) 推文件到 /app：step_pvt_stress 内 remount rw → SFTP → chmod +x → exec（invoke_remote_script 模式）
+# 4) 检测返回：stdout/stderr 流式匹配 pass_on_stdout_regex（须晚于「cycle start」：脚本先打 cycle start 再打 locomotion，
+#    若仍用 cycle … start + disconnect_early，会在第一轮动作前断 SSH，压测实质未跑。
+#    现改为匹配「sleep … (after stand)」：在首次 stand 的 ros2 service call 完成之后才会打这行。
+# 5) 校验 v3 落盘：step_pvt_verify_script_on_robot（可选核对；与上传路径一致）
+# 6) 列远端目录：step_pvt_list_remote_app（cd /app && ls -la，stdout 写入测试日志）
+# 7) 拔 Hub 人工确认 → utility.delay 120min（hub_countdown_ms）→ MES 上传结果
 #
-# —— 压测脚本（默认：本机拷到远端再执行）——
-# 默认：invoke_remote_script=true + upload_local_file=本机 sh → 同一 SSH 会话内 SFTP 写到 remote_script_path，
-# 再 mount→chmod→执行（远端无文件时适用）。将 pvt_upload_local_file 设为 '' 可跳过上传（要求板上已有该路径文件）。
+# 【注意】pass_regex_disconnect_early=true 时：一旦匹配 pass_on_stdout_regex 即判本步通过并断开 SSH，
+# 远端 bash 内脚本常被终止，板上不会跑满整轮。若要求「脚本在板上跑满再进入 120min」，
+# 请将该参数改为 false，并适当加大 exec_timeout / 步骤 timeout。
+#
+# SSH 使用 Paramiko，主机须为可解析 IP；私钥用户须与 MobaXterm 一致（如 root）。
+#
+# —— 压测脚本（默认：本机拷到远端 /app 再执行）——
+# 默认：invoke_remote_script=true + upload_local_file → 同一 SSH 内 SFTP 到 remote_script_path，
+# 再 mount→chmod→执行。将 pvt_upload_local_file 设为 '' 可跳过上传（要求板上已有该路径脚本）。
+# invoke_remote_background：远端 nohup ./ 脚本 + 本会话 tail -f 日志；拔 Hub 断 SSH 后压测仍在板上跑（见 pvt_nohup_log）。
 # 备选：pvt_invoke_remote_script=false → 本机脚本经 stdin（bash -s）执行，远端不落盘。
 # —— 换电脑后无法启动 / 步骤报错时请先核对 ——
-# 1) pvt_script_path：本机脚本须存在；默认会 SFTP 到远端。换电脑必改路径。
+# 1) pvt_script_path：序列默认本机脚本路径；若在「设置 → SSH」中填写「远程上传脚本」，运行时会自动覆盖为本路径。
 # 2) Config/config.yaml → ssh.private_key_path：必须指向「本机」私钥文件，否则会 SSH 认证失败。
 # 3) robot_ip / pvt_ssh_host：新电脑到狗子/S100 的网络若不同，需改 IP；本机需能 ping 通。
 # 4) 启动方式：须在 TestTool 项目根目录执行 python -m src.app.main，否则可能找不到 Config/config.yaml。
@@ -28,18 +42,24 @@ variables:
   pvt_ssh_host: '192.168.126.2'
   pvt_ssh_user: 'root'
   pvt_invoke_remote_script: true
+  # 远端落盘路径（与 pvt_script_path 上传内容对应；板上常用 v3 文件名）
   pvt_remote_script_path: '/app/pvt_stress_test_v3.sh'
   pvt_remote_workdir: '/app'
-  # 换电脑必改：本机 .sh；默认会 SFTP 覆盖到 pvt_remote_script_path；不上传时改为 ''
-  pvt_script_path: 'C:/Users/VitaDynamics/Desktop/pvt_stress_test_v3.sh'
+  # 本机待上传脚本（可被配置 ssh.import_script_path 覆盖，见设置 → SSH 私钥下方）
+  pvt_script_path: 'client/vita_engineer_client/pvt_stress_test.sh'
   pvt_upload_local_file: '${pvt_script_path}'
   # 压测循环次数（默认 24；总轮数仍由远端脚本决定，此处仅传 --loops）
   pvt_stress_loops: 24
   pvt_script_args: '--duration 180 --loops ${pvt_stress_loops} --post-stop-sleep 5 --post-jump-sleep 15 --motor-sleep 5'
-  # early 模式：仅约束「多久内要看到首条 cycle … start」；若改 pass_regex_disconnect_early=false 再加大
+  # early 模式：约束多久内看到 pass_on_stdout_regex；若改 pass_regex_disconnect_early=false 再加大
   pvt_exec_timeout_sec: 7200
+  # nohup 日志（invoke_remote_background=true）；默认 /tmp/<脚本名>.testtool_nohup.log
+  pvt_nohup_log: '/tmp/pvt_stress_test_v3.testtool_nohup.log'
+  pvt_invoke_remote_background: true
   # Hub 后老化倒计时 120 分钟（毫秒）
   hub_countdown_ms: 7200000
+  # SSH 列目录步骤：远端路径（默认 /app）
+  pvt_list_remote_dir: '/app'
 
 steps:
   - id: step_mes_0
@@ -116,24 +136,73 @@ steps:
       remote_remount_app_rw: true
       upload_local_file: '${pvt_upload_local_file}'
       remote_remount_app_rw_before_upload: true
+      invoke_remote_background: '${pvt_invoke_remote_background}'
+      invoke_remote_background_log: '${pvt_nohup_log}'
       # invoke_remote=true 时由代码忽略；仅 pvt_invoke_remote_script=false（stdin 模式）时使用
       local_script_file: '${pvt_script_path}'
       script_args: '${pvt_script_args}'
       strict_host_key: false
-      pass_on_stdout_regex: 'cycle\s+\d+/\d+\s+start'
+      # submit 日志在 ros2 call 之前；用 after stand 的 sleep 日志作断点，确保首轮 stand 已调用完成
+      pass_on_stdout_regex: 'sleep\s+[0-9]+(?:\.[0-9]+)?s\s+\(after stand\)'
       pass_regex_include_stderr: true
-      # true：一旦出现 cycle n/m start 即本步通过并进入下一步（会断开 SSH，远端 bash 内脚本通常会被终止）
+      # true：首轮 stand 完成后本步通过并断开 SSH（远端脚本仍会被终止；要跑满整轮请 disconnect_early=false）
       # false：匹配后仍等到远端脚本自行结束（适合希望压测在板上跑满时）
       pass_regex_disconnect_early: true
       # 仅在 disconnect_early=false 等跑完全程时才有意义
       pass_regex_ignore_script_exit: true
       expect_zero_exit: true
       connect_timeout: 30
-      # 最长等待「首条 cycle … start」出现的时间（秒）；匹配后即结束本步，不必再按整轮压测设 8 小时
+      # 最长等待「首轮 stand 完成后的 sleep (after stand)」出现的时间（秒）；匹配后即结束本步
       exec_timeout: '${pvt_exec_timeout_sec}'
       keepalive_sec: 10
     # 本步在 early 模式下很快结束；留足首 cycle 出现前的余量即可
     timeout: 3600000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 压测步内已 SFTP 到 pvt_remote_script_path；本步单独 SSH 校验文件存在且非空（确认 v3 已落盘）
+  - id: step_pvt_verify_script_on_robot
+    name: VerifyPvtV3ScriptOnRobot
+    type: utility.ssh_exec
+    params:
+      host: '${pvt_ssh_host}'
+      username: '${pvt_ssh_user}'
+      port: 22
+      command: bash -lc "test -f ${pvt_remote_script_path} && test -s ${pvt_remote_script_path} && echo PVT_SCRIPT_VERIFY_OK"
+      strict_host_key: false
+      expect_zero_exit: true
+      connect_timeout: 30
+      exec_timeout: 60
+      keepalive_sec: 10
+    timeout: 90000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 远端列出 /app 内容（无正则匹配；stdout 由 ssh_exec 写入日志，便于核对上传结果）
+  - id: step_pvt_list_remote_app
+    name: ListRemoteAppDir
+    type: utility.ssh_exec
+    params:
+      host: '${pvt_ssh_host}'
+      username: '${pvt_ssh_user}'
+      port: 22
+      command: bash -lc "cd ${pvt_list_remote_dir} && pwd && ls -la"
+      strict_host_key: false
+      expect_zero_exit: true
+      connect_timeout: 30
+      exec_timeout: 60
+      keepalive_sec: 10
+    timeout: 90000
     retries: 0
     condition: null
     expect: null

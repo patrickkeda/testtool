@@ -127,6 +127,7 @@ ports:
       retries: 3
 ssh:
   private_key_path: C:/Users/VitaDynamics/Desktop/id_ed25519_evt_board
+  import_script_path: C:/Users/VitaDynamics/Desktop/pvt_stress_test_v3.sh
 mes:
   vendor: huaqin_qmes
   base_url: http://10.51.66.36/API.MD4H/HQAPI

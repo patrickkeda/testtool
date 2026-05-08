@@ -12,6 +12,11 @@ _dll_candidates = [
 ]
 _dll_datas = [(str(p.resolve()), "bin") for p in _dll_candidates if p.is_file()]
 
+# 工程测试客户端（与 build/TestTool.spec 对齐，避免从仓库根误用本 spec 时漏打 client）
+_client_datas = []
+if (SPEC_ROOT / "client").is_dir():
+    _client_datas.append((str(SPEC_ROOT / "client"), "client"))
+
 # CAN vendor DLLs (ECanVci64 / ECANFDVCI64)
 # Put these files in one of the candidate paths below, then rebuild.
 _can_dll_candidates = [
@@ -28,8 +33,16 @@ a = Analysis(
     ['src\\app\\main.py'],
     pathex=['.'],
     binaries=[],
-    datas=[('Config', 'Config'), ('Seq', 'Seq')] + _dll_datas + _can_dll_datas,
-    hiddenimports=[],
+    datas=[('Config', 'Config'), ('Seq', 'Seq')] + _client_datas + _dll_datas + _can_dll_datas,
+    hiddenimports=[
+        'vita_engineer_client',
+        'vita_engineer_client.engineer_client',
+        'vita_engineer_client.test_engineer_client',
+        'vita_engineer_client.protocol',
+        'vita_engineer_client.crypto_utils',
+        'vita_engineer_client.response_handlers',
+        'vita_engineer_client.pointcloud_processor',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

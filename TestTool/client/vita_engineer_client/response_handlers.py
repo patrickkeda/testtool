@@ -179,12 +179,13 @@ async def handle_camera_response(response: Dict[str, Any], params) -> bool:
 
 async def handle_infrared_response(response: Dict[str, Any], params) -> bool:
     """红外相机响应处理器"""
-    print(f"处理红外相机响应: {params.operation}")
-    
+    op = str(getattr(params, "operation", "") or "").strip()
+    print(f"处理红外相机响应: {op}")
+
     if response.get("status") != ResponseStatus.SUCCESS.value:
-        print(f"红外相机命令 {params.operation} 执行失败: {response.get('message', '')}")
+        print(f"红外相机命令 {op} 执行失败: {response.get('message', '')}")
         return False
-    if params.operation == "1":
+    if op == "1":
         # Step 1: Parse JSON data (JSON itself is not base64 encoded)
         data_str = response.get('data', '')
         if not data_str:
@@ -244,13 +245,15 @@ async def handle_infrared_response(response: Dict[str, Any], params) -> bool:
         image.save(filename)
         image.show()
         return True
-    elif params.operation == "2":
+    elif op == "2":
+        # 标定/验证完成：服务端已返回 success，data 多为纯文本说明，无需再解析图像
         print(f"命令执行成功: {response.get('message', '')}")
         data_str = response.get("data", "")
         if data_str:
             print(f"{data_str}")
+        return True
 
-    print(f"invalid operation: {params.operation}")
+    print(f"invalid operation: {op}")
     return False
 
 

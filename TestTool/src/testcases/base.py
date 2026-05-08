@@ -51,7 +51,8 @@ class BaseStep(ABC):
     
     def __init__(self, step_id: str, step_name: str, 
                  timeout: int = 30, retries: int = 0, 
-                 on_failure: str = "fail"):
+                 on_failure: str = "fail",
+                 retry_interval_ms: int = 1000):
         """
         初始化测试步骤
         
@@ -61,12 +62,14 @@ class BaseStep(ABC):
             timeout: 超时时间（秒）
             retries: 失败时的额外重试次数；共执行 (retries + 1) 次，任一次通过即通过，全部失败才判本步失败
             on_failure: 失败策略 (fail/continue/stop_port/stop_all)
+            retry_interval_ms: 失败复测时相邻两次尝试之间的等待时间（毫秒），与 timeout 无关
         """
         self.step_id = step_id
         self.step_name = step_name
         self.timeout = timeout
         self.retries = retries
         self.on_failure = on_failure
+        self.retry_interval_ms = max(0, int(retry_interval_ms))
         self.logger = logging.getLogger(f"Step.{step_id}")
     
     def run(self, ctx: Context, params: Dict[str, Any]) -> StepResult:
@@ -92,7 +95,8 @@ class BaseStep(ABC):
             try:
                 if attempt > 0:
                     self.logger.info(f"重试第 {attempt} 次（第 {attempt + 1}/{max_attempts} 次尝试）")
-                    ctx.sleep_ms(1000)  # 重试前等待1秒
+                    if self.retry_interval_ms > 0:
+                        ctx.sleep_ms(self.retry_interval_ms)
 
                 result = self.run_once(ctx, params)
 
@@ -107,7 +111,6 @@ class BaseStep(ABC):
                             attempt + 1,
                             max_attempts,
                         )
-                    ctx.sleep_ms(1000)
                     return result
 
                 self.logger.warning(
@@ -118,7 +121,8 @@ class BaseStep(ABC):
                 )
                 if attempt < self.retries:
                     self.logger.info(
-                        "约 1s 后重试（剩余 %s 次尝试）",
+                        "约 %sms 后重试（剩余 %s 次尝试）",
+                        self.retry_interval_ms,
                         self.retries - attempt,
                     )
                     continue
@@ -207,7 +211,8 @@ class BaseStep(ABC):
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
-            return value.lower() in ('true', '1', 'yes', 'on', 'enabled')
+            s = value.strip().lower()
+            return s in ('true', '1', 'yes', 'on', 'enabled')
         return bool(value)
     
     def validate_required_params(self, params: Dict[str, Any], required_keys: list) -> bool:

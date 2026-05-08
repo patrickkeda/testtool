@@ -93,6 +93,58 @@ if not main_py.exists():
             f"    2. The src/app/main.py file exists"
         )
 
+# ---------------------------------------------------------------------------
+# MES：HQMES.dll → _internal/bin（与 MESConfig.credentials.dll_path 默认 bin/HQMES.dll 一致）
+# 若仓库 bin/HQMES.dll 已存在，整目录打包即可；否则按候选路径收进包，避免漏打。
+# ---------------------------------------------------------------------------
+_hqmes_fallback_datas = []
+if not (project_root / 'bin' / 'HQMES.dll').is_file():
+    _hqmes_fallback_candidates = [
+        project_root / 'build' / 'mes_dll' / 'HQMES.dll',
+        Path(r'D:/Mes/dll_v4.0.0.3/x64/HQMES.dll'),
+        Path(r'D:/Mes/dll_v4.0.0.3/x86/HQMES.dll'),
+        Path(r'C:/Users/VitaDynamics/Desktop/dll_v4.0.0.3/x64/HQMES.dll'),
+        project_root / '_tmp_hqmes' / 'dll_v4.0.0.3' / 'x64' / 'HQMES.dll',
+        project_root / '_tmp_hqmes' / 'dll_v4.0.0.3' / 'x86' / 'HQMES.dll',
+    ]
+    for _hq in _hqmes_fallback_candidates:
+        try:
+            if _hq.is_file():
+                _hqmes_fallback_datas.append((str(_hq.resolve()), 'bin'))
+                break
+        except OSError:
+            continue
+
+# ---------------------------------------------------------------------------
+# CAN：厂商 DLL 打进 _internal/test/canapp（与 can_sender._load_dll 搜索路径一致）
+# 优先 build/can_dll（构建机集中放置），其次 test/canapp；每种文件名只收一次。
+# ---------------------------------------------------------------------------
+_can_dll_names = ('CHUSBDLL64.dll', 'ECanVci64.dll', 'ECANFDVCI64.dll')
+_can_search_dirs = [
+    project_root / 'build' / 'can_dll',
+    project_root / 'test' / 'canapp',
+]
+_can_vendor_binaries = []
+_seen_can_name = set()
+for _cand_root in _can_search_dirs:
+    for _dll_name in _can_dll_names:
+        _key = _dll_name.lower()
+        if _key in _seen_can_name:
+            continue
+        _cp = _cand_root / _dll_name
+        try:
+            if _cp.is_file():
+                _seen_can_name.add(_key)
+                _can_vendor_binaries.append((str(_cp.resolve()), 'test/canapp'))
+        except OSError:
+            continue
+
+# 运行时钩子：打包后 chdir 到 exe 目录、修正 sys.path（若文件存在）
+_runtime_hook_files = []
+_rh = project_root / 'build' / 'runtime_hook.py'
+if _rh.is_file():
+    _runtime_hook_files.append(str(_rh.resolve()))
+
 # 构建打包数据列表（examples 仅当目录存在时包含，避免打包失败）
 # test/dogleg 为 PCAN 狗腿测试步骤所需（pcan.py 动态加载 tool.py 中的 CANCommunicator）
 datas = [
@@ -110,7 +162,7 @@ if (project_root / 'test' / 'dogleg').is_dir():
     datas.append((str(project_root / 'test' / 'dogleg'), 'test/dogleg'))
 if (project_root / 'examples').is_dir():
     datas.append((str(project_root / 'examples'), 'examples'))
-datas = datas + cv2_datas + _tk_datas
+datas = datas + _hqmes_fallback_datas + cv2_datas + _tk_datas
 
 # PCAN 狗腿步骤依赖 test/dogleg/tool.py -> PCANBasic，需把 PCANBasic.dll 打进包
 _pcan_binaries = []
@@ -144,11 +196,7 @@ a = Analysis(
         str(project_root),
         str(project_root / 'src'),
     ],
-    binaries=[
-        (str(project_root / 'test' / 'canapp' / dll), 'test/canapp')
-        for dll in ['CHUSBDLL64.dll', 'ECanVci64.dll']
-        if (project_root / 'test' / 'canapp' / dll).exists()
-    ] + _pcan_binaries + _tk_binaries,
+    binaries=_can_vendor_binaries + _pcan_binaries + _tk_binaries,
     datas=datas,
     hiddenimports=[
         'PySide6.QtCore',
@@ -228,7 +276,7 @@ a = Analysis(
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=_runtime_hook_files,
     excludes=[
         'matplotlib.tests',
         'numpy.tests',

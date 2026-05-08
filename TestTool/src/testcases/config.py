@@ -120,6 +120,11 @@ class TestStepConfig(BaseModel):
         0,
         description="失败复测：额外重试次数，共执行 (retries+1) 次；任一次通过即本步通过",
     )
+    retry_interval_ms: int = Field(
+        1000,
+        ge=0,
+        description="失败复测间隔：两次尝试之间的等待时间(ms)；与步骤执行 timeout 无关",
+    )
     condition: Optional[str] = Field(None, description="执行条件表达式")
     expect: Optional[Union[ExpectConfig, ATExpectConfig]] = Field(None, description="期望结果配置")
     on_failure: str = Field("fail", description="失败策略: fail, skip, retry, continue")
@@ -140,6 +145,7 @@ class TestStepConfig(BaseModel):
             "params": data.get("params", {}),
             "timeout": data.get("timeout"),
             "retries": data.get("retries", 0),
+            "retry_interval_ms": data.get("retry_interval_ms", 1000),
             "condition": data.get("condition"),
             "on_failure": data.get("on_failure", "fail")
         }

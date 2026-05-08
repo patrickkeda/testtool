@@ -10,15 +10,15 @@ metadata:
 
 # 说明：
 # - 脚本仍是 bash + ROS2 + systemd，必须在 S100/Linux 上跑；Windows CMD 不能直接执行。
-# - 推荐：local_script_file 指向「运行 TestTool 的电脑」上的 .sh，工具经 SSH 用 stdin 传给远端 bash -s，
-#   不必先把脚本拷贝到 S100 磁盘（执行环境与 ros2/env 仍在远端）。
+# - 推荐：local_script_file 指向本机 .sh（可用相对 TestTool 根目录，如 client/vita_engineer_client/...），
+#   经 SSH stdin 传给远端 bash -s，不必先拷贝到 S100（环境与 ros2/env 仍在远端）。
 # - 远端仍需：默认 /app/script/env.sh、DAG、bms_test、locomotion 等（与脚本一致）。
 # - 私钥：应用配置「SSH」页或 private_key_file / private_key_env。
 variables:
   pvt_ssh_host: "192.168.126.2"
   pvt_ssh_user: "root"
-  # 本机脚本路径（按实际用户目录修改）；也可用 UNC/WSL 路径
-  pvt_local_script: "C:/Users/VitaDynamics/Downloads/pvt_stress_test(1).sh"
+  # 相对 TestTool 根目录；或改为本机绝对路径
+  pvt_local_script: "client/vita_engineer_client/pvt_stress_test.sh"
   # 传给脚本的参数（posix shlex；与脚本 --help 一致）
   pvt_script_args: "--loops 1 --duration 180"
 
