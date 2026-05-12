@@ -189,7 +189,6 @@ printer:
   save_preview: true
   preview_dir: Result/print_preview
   zpl_file: ''
-  # 关闭后不在每次打印前下发硬锁 ZPL，标签尺寸/原点/浓度等可在打印机或驱动上调节
   hardlock_enabled: false
   hardlock_zpl: ^XA^PW2457^LL732^LH0,0^LT0^LS0^PR3,3~SD15^XZ
   image_imei_x_px: 392
@@ -218,6 +217,6 @@ versions:
     sw_version: 1.3.1
 test_sequence:
   file: Seq/ft1.yaml
-  last_used: D:/testtools/TestTool-v0.4/TestTool/Seq/pvt_stress_ssh.yaml
+  last_used: D:/testtools/TestTool-v0.4/TestTool/Seq/vita01-headmodel.yaml
 selfcheck:
   checklist: config/selfcheck.yaml
