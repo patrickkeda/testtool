@@ -18,6 +18,8 @@ from PySide6.QtCore import QObject, Signal
 
 # 导入新架构组件
 from ..testcases.context import Context
+# 先加载 register_steps：其模块尾部会执行 register_all_steps()，保证仅 import worker 时注册表也已填充
+from ..testcases import register_steps as _register_steps  # noqa: F401
 from ..testcases.registry import create_step
 from ..testcases.base import StepResult
 from ..testcases.simple_config import TestSequenceConfig
