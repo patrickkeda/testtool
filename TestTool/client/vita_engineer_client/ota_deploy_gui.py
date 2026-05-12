@@ -2,6 +2,7 @@
 import os
 import sys
 import json
+import subprocess
 import threading
 import fnmatch
 import shlex
@@ -20,7 +21,7 @@ except ImportError:
 # ── 升级包识别规则 ──────────────────────────────────────────────────
 PKG_RULES = {
     "S100 APP": "*app*s100*.zip",
-    "S100 SYS": "all_in_one-v2*.zip",
+    "S100 SYS": "all_in_one-v*.zip",
     "X5 APP": "*app*x5*.zip",
     "X5 SYS": "all_in_one-LNX*.zip"
 }
@@ -37,7 +38,10 @@ DEFAULT_CONFIG = {
     "ota_target_s100": True, 
     "ota_target_x5": True,   
     "use_tmux": True,
-    "sync_items": [] 
+    "sync_items": [],
+    # Zenoh set_zenoh_mode_client.py：勾选则校验 COMMIT_HASH；不勾选则传 --skip-hash-check
+    "zenoh_enforce_hash_check": False,
+    "zenoh_client_script": "",
 }
 
 CONFIG_FILE = os.path.expanduser("~/.ota_deploy_config.json")
@@ -575,6 +579,25 @@ class OTADeployGUI:
         self.key_path = tk.Entry(r2, width=45, bg="white"); self.key_path.pack(side=tk.LEFT, padx=5)
         tk.Button(r2, text="选择私钥", command=self._browse_key).pack(side=tk.LEFT)
 
+        f_zenoh = tk.LabelFrame(container, text=" Zenoh 客户端模式脚本（可选） ", bg=self.bg, padx=10, pady=5)
+        f_zenoh.pack(fill=tk.X, pady=2)
+        rz = tk.Frame(f_zenoh, bg=self.bg)
+        rz.pack(fill=tk.X, pady=2)
+        self.zenoh_enforce_hash = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            rz,
+            text="校验 COMMIT_HASH（与脚本内期望版本一致；不勾选则跳过该校验）",
+            variable=self.zenoh_enforce_hash,
+            bg=self.bg,
+        ).pack(anchor="w")
+        rz2 = tk.Frame(f_zenoh, bg=self.bg)
+        rz2.pack(fill=tk.X, pady=2)
+        tk.Label(rz2, text="脚本路径:", bg=self.bg).pack(side=tk.LEFT)
+        self.zenoh_script_path = tk.Entry(rz2, width=70, bg="white")
+        self.zenoh_script_path.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        tk.Button(rz2, text="浏览…", command=self._browse_zenoh_script).pack(side=tk.LEFT)
+        tk.Button(rz2, text="▶ 运行脚本", command=self._run_zenoh_client_script).pack(side=tk.LEFT, padx=6)
+
         f_ota = tk.LabelFrame(container, text=" 2. OTA 升级功能 ", bg="#e8f4f8", padx=10, pady=5)
         f_ota.pack(fill=tk.X, pady=5)
         r_o_t = tk.Frame(f_ota, bg="#e8f4f8"); r_o_t.pack(fill=tk.X, pady=2)
@@ -730,7 +753,9 @@ class OTADeployGUI:
             "identity_file": self.key_path.get(), "ota_target_s100": self.ota_s100_v.get(), "ota_target_x5": self.ota_x5_v.get(),
             "s100_app_path": self.ota_paths["S100 APP"].get(), "s100_sys_path": self.ota_paths["S100 SYS"].get(),
             "x5_app_path": self.ota_paths["X5 APP"].get(), "x5_sys_path": self.ota_paths["X5 SYS"].get(),
-            "use_tmux": self.use_tmux.get(), "sync_items": sync_items
+            "use_tmux": self.use_tmux.get(), "sync_items": sync_items,
+            "zenoh_client_script": self.zenoh_script_path.get().strip(),
+            "zenoh_enforce_hash_check": self.zenoh_enforce_hash.get(),
         }
 
     def _labeled_entry(self, p, t, w, padx=0):
@@ -758,6 +783,69 @@ class OTADeployGUI:
     def _browse_key(self):
         f = filedialog.askopenfilename()
         if f: self.key_path.delete(0, tk.END); self.key_path.insert(0, f)
+
+    def _browse_zenoh_script(self):
+        f = filedialog.askopenfilename(filetypes=[("Python", "*.py"), ("所有文件", "*.*")])
+        if f:
+            self.zenoh_script_path.delete(0, tk.END)
+            self.zenoh_script_path.insert(0, f)
+
+    def _run_zenoh_client_script(self):
+        path = self.zenoh_script_path.get().strip()
+        if not path or not os.path.isfile(path):
+            messagebox.showerror("错误", "请先选择有效的 set_zenoh_mode_client.py 文件。")
+            return
+        cfg = self._get_ui_cfg()
+        save_config(cfg)
+
+        def work():
+            cmd = [
+                sys.executable,
+                os.path.abspath(path),
+                "--s100-host",
+                cfg["s100_ip"].strip(),
+                "--x5-host",
+                cfg["x5_ip"].strip(),
+            ]
+            if cfg.get("use_identity_file") and (cfg.get("identity_file") or "").strip():
+                keyf = cfg["identity_file"].strip()
+                if os.path.isfile(keyf):
+                    cmd.extend(["--key", os.path.abspath(keyf)])
+            if not cfg.get("zenoh_enforce_hash_check"):
+                cmd.append("--skip-hash-check")
+            self._log(">>> Zenoh 脚本: " + " ".join(shlex.quote(c) for c in cmd))
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=900,
+                )
+                if proc.stdout:
+                    for line in proc.stdout.splitlines():
+                        self._log(line)
+                if proc.stderr:
+                    for line in proc.stderr.splitlines():
+                        self._log("[stderr] " + line)
+                if proc.returncode == 0:
+                    self._log(">>> Zenoh 脚本执行完成 (exit 0)")
+                    self.root.after(0, lambda: messagebox.showinfo("完成", "Zenoh 脚本已执行完成。"))
+                else:
+                    self._log(f">>> Zenoh 脚本退出码: {proc.returncode}")
+                    self.root.after(
+                        0,
+                        lambda c=proc.returncode: messagebox.showerror("失败", f"脚本退出码 {c}，请查看日志。"),
+                    )
+            except subprocess.TimeoutExpired:
+                self._log(">>> Zenoh 脚本超时（>900s）")
+                self.root.after(0, lambda: messagebox.showerror("超时", "脚本执行超时。"))
+            except Exception as e:
+                self._log(f">>> Zenoh 脚本异常: {e}")
+                self.root.after(0, lambda err=str(e): messagebox.showerror("错误", err))
+
+        threading.Thread(target=work, daemon=True).start()
     def _browse_sync_file(self, v):
         f = filedialog.askopenfilename()
         if f: v.set(f)
@@ -769,6 +857,9 @@ class OTADeployGUI:
         self.ota_s100_v.set(self.cfg.get("ota_target_s100", True)); self.ota_x5_v.set(self.cfg.get("ota_target_x5", True))
         for l, e in self.ota_paths.items(): e.delete(0, tk.END); e.insert(0, self.cfg.get(l.lower().replace(" ","_")+"_path", ""))
         self.use_tmux.set(self.cfg.get("use_tmux", True))
+        self.zenoh_script_path.delete(0, tk.END)
+        self.zenoh_script_path.insert(0, self.cfg.get("zenoh_client_script", ""))
+        self.zenoh_enforce_hash.set(self.cfg.get("zenoh_enforce_hash_check", False))
         for r in self.sync_rows: r["frame"].destroy()
         self.sync_rows = []
         for item in self.cfg.get("sync_items", []):

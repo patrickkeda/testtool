@@ -214,8 +214,8 @@ class CreateDeviceJsonStep(BaseStep):
                     "parentId": "vbotPVTsample",
                     "deviceType": "direct",
                     "alias": alias_name,
-                    "factoryDownloadVersion": "V1.0.0~20260429022512",
-                    "factoryInstallVersion": "V1.0.0~20260429022512",
+                    "factoryDownloadVersion": "V1.1.0-5~20260508152452",
+                    "factoryInstallVersion": "V1.1.0-5~20260508152452",
                     "description": f"Vita robot pvt no.{sn}",
                     "status": "1",
                     "linkStatus": "offline"

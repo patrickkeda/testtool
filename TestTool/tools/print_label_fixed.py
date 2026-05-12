@@ -48,7 +48,7 @@ def main() -> int:
         params={
             "imei_font_source": str(imei_font),
             "scramble_font_source": str(scramble_font),
-            "hardlock_enabled": bool(cfg.get("hardlock_enabled", True)),
+            "hardlock_enabled": bool(cfg.get("hardlock_enabled", False)),
             "hardlock_zpl": hardlock_zpl,
             "image_imei_x_px": int(cfg.get("image_imei_x_px", 439)),
             "image_imei_y_px": int(cfg.get("image_imei_y_px", 611)),

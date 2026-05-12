@@ -305,16 +305,16 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 11: 电池检测
-  - id: step_12
-    name: GNSSTest
+  # Step 11.1: WiFi（SN 从云端拉取 ssid/password 写入 autoconnect）
+  - id: step_11.1
+    name: WiFiAutoconnectBySn
     type: engineer.test
     params:
-      command: 'battery=1,45,50%'
+      command: 'wifi=1,${sn}%'
       robot_ip: '${robot_ip}'
       port: ${robot_port}
-      timeout: 30
-    timeout: 35000
+      timeout: 120
+    timeout: 130000
     retries: 1
     condition: null
     expect: null
@@ -429,8 +429,26 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 20: 唤醒大头
-  - id: step_20
+  # Step 15.2: 红外相机验证（检测站）
+  - id: step_15.2
+    name: IRCameraVerify
+    type: engineer.test
+    params:
+      command: 'ircamera=2%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 15.1: 唤醒大头
+  - id: step_15.1
     name: WakeUpHead
     type: engineer.test
     params:
@@ -513,8 +531,42 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 18:offline
+  # Step 19: 获取版本
   - id: step_19
+    name: ReadVersion
+    type: engineer.test
+    params:
+      command: 'version=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 20: 版本校验
+  - id: step_20
+    name: CompareVersion
+    type: case.compare_version
+    params:
+      version_step_id: step_19
+      config_path: Config/config.yaml
+    timeout: 5000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 21: offline
+  - id: step_21
     name: offline
     type: engineer.test
     params:
@@ -531,8 +583,8 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 19: Efuse 写入 SN
-  - id: step_20
+  # Step 22: Efuse 写入 SN
+  - id: step_22
     name: EfuseSN
     type: engineer.test
     params:
@@ -564,8 +616,8 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 20: 站立
-  - id: step_21
+  # Step 23: 站立
+  - id: step_23
     name: StandUp
     type: engineer.test
     params:
@@ -582,8 +634,8 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 21: 延时 100 秒
-  - id: step_22
+  # Step 24: 延时 100 秒
+  - id: step_24
     name: DelayAfterPowerOn
     type: utility.delay
     params:
@@ -597,8 +649,8 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 13: stage2设置为1 (stage=1,6,1%)
-  - id: step_23
+  # Step 25: stage2设置为1 (stage=1,6,1%)
+  - id: step_25
     name: ConfirmFusionFlag
     type: engineer.test
     params:
@@ -613,8 +665,8 @@ steps:
     expect: null
     on_failure: fail
 
-  # Step 22: 下电
-  - id: step_24
+  # Step 26: 下电
+  - id: step_26
     name: PowerOff
     type: engineer.test
     params:

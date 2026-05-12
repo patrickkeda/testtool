@@ -88,7 +88,6 @@ steps:
     params:
       channel: local
       printer_name: '${zebra_printer_name}'
-      hardlock_enabled: true
       copies: 1
       imei: '${imei}'
       scramble: '${scramble}'
