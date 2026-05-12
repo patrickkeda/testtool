@@ -79,6 +79,8 @@ class MainWindow(QMainWindow):
         
         self._i18n = I18n(locale="zh_CN")
         self.setWindowTitle(self._i18n.t("app.title"))
+        # 供 ui_invoker 等定位主窗口作对话框父级（中文标题不含 "TestTool" 字符串）
+        self.setObjectName("testtool_main_window")
         self.resize(1280, 800)
 
         self._translator = QTranslator(self)

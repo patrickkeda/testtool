@@ -309,16 +309,12 @@ class ScanSNStep(BaseStep):
             ctx.log_info(f"[{ctx.port}] UI调用器导入成功")
             ctx.log_info(f"[{ctx.port}] 显示SN输入对话框...")
             
-            # 获取主窗口引用
+            # 获取主窗口引用（中文标题下不能仅靠 "TestTool" 子串匹配）
             main_window = None
             try:
-                app = QApplication.instance()
-                if app:
-                    # 查找主窗口
-                    for widget in app.allWidgets():
-                        if hasattr(widget, 'windowTitle') and 'TestTool' in widget.windowTitle():
-                            main_window = widget
-                            break
+                from src.app.ui_invoker import find_testtool_main_window
+
+                main_window = find_testtool_main_window()
             except Exception as e:
                 ctx.log_warning(f"无法获取主窗口引用: {e}")
             

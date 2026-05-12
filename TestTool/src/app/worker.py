@@ -10,8 +10,6 @@ import sys
 import time
 import threading
 import logging
-import json
-from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 from PySide6.QtCore import QObject, Signal
@@ -24,23 +22,6 @@ from ..testcases.registry import create_step
 from ..testcases.base import StepResult
 from ..testcases.simple_config import TestSequenceConfig
 from ..testcases.utils import resolve_placeholders_in_params
-
-# #region agent log
-try:
-    Path(r"d:\b2test\TestTool-v0.4\.cursor").mkdir(parents=True, exist_ok=True)
-    with open(r"d:\b2test\TestTool-v0.4\.cursor\debug.log", "a", encoding="utf-8") as _f:
-        _f.write(json.dumps({
-            "sessionId": "debug-session",
-            "runId": "run1",
-            "hypothesisId": "H0",
-            "location": "src/app/worker.py:module",
-            "message": "worker module imported",
-            "data": {},
-            "timestamp": int(time.time() * 1000),
-        }, ensure_ascii=False) + "\n")
-except Exception as _e:
-    logging.getLogger(__name__).warning("agent debug log write failed: %s", _e)
-# #endregion
 
 
 class PortWorker(QObject):
@@ -269,18 +250,6 @@ class PortWorker(QObject):
                 self.sig_progress.emit(int(idx * 100 / n))
                 continue
 
-            # 单步调试：不执行任何 MES 步骤（避免成功/失败均触网）
-            _stype = str(getattr(step_config, "type", "") or "")
-            if run_single and _stype.startswith("mes."):
-                self._logger.info(
-                    "单步调试模式：跳过 MES 步骤 %s (%s)",
-                    step_config.id,
-                    step_config.name,
-                )
-                self.sig_step.emit(step_config.id, "Skipped")
-                self.sig_progress.emit(int(idx * 100 / n))
-                break
-
             # 执行步骤
             self._logger.info(
                 f"执行步骤 {step_config.id}（第 {idx}/{n} 步）: {step_config.name}"
@@ -318,28 +287,6 @@ class PortWorker(QObject):
                 )
                 result = step_instance.run(self.context, _params)
 
-                # #region agent log
-                try:
-                    with open(r"d:\b2test\TestTool-v0.4\.cursor\debug.log", "a", encoding="utf-8") as _f:
-                        _f.write(json.dumps({
-                            "sessionId": "debug-session",
-                            "runId": "run1",
-                            "hypothesisId": "H1",
-                            "location": "src/app/worker.py:_run",
-                            "message": "step executed",
-                            "data": {
-                                "step_id": step_config.id,
-                                "step_type": step_config.type,
-                                "passed": getattr(result, "passed", None),
-                                "has_set_result": hasattr(self.context, "set_result"),
-                                "state_keys_count_before": len(getattr(self.context, "state", {}) or {}),
-                            },
-                            "timestamp": int(time.time() * 1000),
-                        }, ensure_ascii=False) + "\n")
-                except Exception:
-                    pass
-                # #endregion
-
                 # 将步骤结果写入上下文，供后续步骤引用（如 Step 7 读取 Step 6 的 SOC）
                 try:
                     if hasattr(self.context, "set_result"):
@@ -351,27 +298,6 @@ class PortWorker(QObject):
                 except Exception as e:  # noqa: BLE001
                     self._logger.warning(f"写入步骤结果到上下文失败: {e}")
 
-                # #region agent log
-                try:
-                    with open(r"d:\b2test\TestTool-v0.4\.cursor\debug.log", "a", encoding="utf-8") as _f:
-                        _f.write(json.dumps({
-                            "sessionId": "debug-session",
-                            "runId": "run1",
-                            "hypothesisId": "H1",
-                            "location": "src/app/worker.py:_run",
-                            "message": "step result stored to context",
-                            "data": {
-                                "step_id": step_config.id,
-                                "stored_key_1": f"{step_config.id}_result",
-                                "stored_key_2": step_config.id,
-                                "state_keys_count_after": len(getattr(self.context, "state", {}) or {}),
-                            },
-                            "timestamp": int(time.time() * 1000),
-                        }, ensure_ascii=False) + "\n")
-                except Exception:
-                    pass
-                # #endregion
-                
                 # 发送步骤结果信号
                 self.sig_step_result.emit(step_config.id, result)
                 

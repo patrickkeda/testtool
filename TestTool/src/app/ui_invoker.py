@@ -9,9 +9,40 @@ import sys
 from typing import Tuple
 
 from PySide6.QtCore import QObject, Slot, Qt, QMetaObject, Q_ARG, Q_RETURN_ARG
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMainWindow
 
 from src.testcases.steps.cases.scan_sn import ScanSNDialog
+
+
+def find_testtool_main_window():
+    """定位 TestTool 主 ``QMainWindow``，供对话框 ``parent`` 使用。
+
+    中文界面标题为「测试工具人机界面」，不含 ``TestTool`` 子串；仅靠标题匹配会失败，
+    对话框会变成无父顶层窗口，看起来像多出一个完整主界面。优先用 ``MainWindow``
+    上设置的 ``objectName``，再回退到标题匹配。
+    """
+    app = QApplication.instance()
+    if app is None:
+        return None
+    try:
+        w = app.findChild(QMainWindow, "testtool_main_window")
+        if w is not None:
+            return w
+    except Exception:
+        pass
+    try:
+        for widget in app.topLevelWidgets():
+            if not isinstance(widget, QMainWindow):
+                continue
+            try:
+                title = widget.windowTitle() or ""
+            except Exception:
+                continue
+            if "TestTool" in title or "测试工具" in title:
+                return widget
+    except Exception:
+        pass
+    return None
 
 
 class _UIInvoker(QObject):
@@ -28,15 +59,7 @@ class _UIInvoker(QObject):
         force_english_keyboard: bool,
     ) -> Tuple[bool, str]:
         app = QApplication.instance()
-        # 尝试获取主窗口作为父对象
-        parent_window = None
-        try:
-            for widget in app.allWidgets():
-                if hasattr(widget, 'windowTitle') and 'TestTool' in widget.windowTitle():
-                    parent_window = widget
-                    break
-        except Exception:
-            parent_window = None
+        parent_window = find_testtool_main_window()
         dlg = ScanSNDialog(
             parent=parent_window,
             title=title,
@@ -74,18 +97,7 @@ def get_ui_invoker() -> _UIInvoker:
 
 def _find_parent_window():
     """尝试查找 TestTool 主窗口，作为对话框父窗口。"""
-    app = QApplication.instance()
-    if not app:
-        return None
-
-    try:
-        for widget in app.allWidgets():
-            if hasattr(widget, "windowTitle") and "TestTool" in widget.windowTitle():
-                return widget
-    except Exception:
-        return None
-
-    return None
+    return find_testtool_main_window()
 
 
 def _render_countdown_message(message: str, remaining_seconds: int, mmss_text: str) -> str:
@@ -140,15 +152,7 @@ def invoke_in_gui_show_scan_sn(
             print(f"[{port}] ScanSNDialog导入成功")
             # 如未提供main_window，这里在主线程内解析
             if main_window is None:
-                try:
-                    mw = None
-                    for widget in QApplication.instance().allWidgets():
-                        if hasattr(widget, 'windowTitle') and 'TestTool' in widget.windowTitle():
-                            mw = widget
-                            break
-                    main_window_local = mw
-                except Exception:
-                    main_window_local = None
+                main_window_local = find_testtool_main_window()
             else:
                 main_window_local = main_window
             dlg = ScanSNDialog(
@@ -196,15 +200,7 @@ def invoke_in_gui_show_scan_sn(
                     try:
                         from src.testcases.steps.cases.scan_sn import ScanSNDialog
                         print(f"[{port}] ScanSNDialog导入成功")
-                        try:
-                            mw = None
-                            for widget in QApplication.instance().allWidgets():
-                                if hasattr(widget, 'windowTitle') and 'TestTool' in widget.windowTitle():
-                                    mw = widget
-                                    break
-                            main_window_local = mw
-                        except Exception:
-                            main_window_local = None
+                        main_window_local = find_testtool_main_window()
                         dlg = ScanSNDialog(
                             parent=main_window_local,
                             title=title,
