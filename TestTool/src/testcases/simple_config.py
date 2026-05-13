@@ -2,6 +2,11 @@
 简化的测试序列配置模型
 
 按照新架构设计，测试序列只包含核心编排参数，业务逻辑在 testcases 模块中实现。
+
+.. note::
+    当前 HMI / ``load_test_sequence`` / ``PortWorker`` 已统一使用 ``config.py`` 中的
+    ``TestSequenceConfig`` / ``TestStepConfig`` / ``TestMetadata``。
+    本模块保留作历史参考或独立脚本使用；新代码请从 ``testcases.config`` 导入。
 """
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional, List

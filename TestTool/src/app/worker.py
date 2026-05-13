@@ -20,7 +20,7 @@ from ..testcases.context import Context
 from ..testcases import register_steps as _register_steps  # noqa: F401
 from ..testcases.registry import create_step
 from ..testcases.base import StepResult
-from ..testcases.simple_config import TestSequenceConfig
+from ..testcases.config import TestSequenceConfig
 from ..testcases.utils import resolve_placeholders_in_params
 
 

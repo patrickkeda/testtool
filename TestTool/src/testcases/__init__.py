@@ -13,7 +13,8 @@
 from .context import Context, create_context
 from .base import BaseStep, StepResult
 from .registry import create_step, register
-from .simple_config import TestSequenceConfig, TestStepConfig, TestMetadata
+# 序列 YAML 与 load_test_sequence / PortWorker 统一使用 config 模型（含 variables、步骤嵌套字段等）
+from .config import TestSequenceConfig, TestStepConfig, TestMetadata
 
 # 导入旧组件（保持兼容性）
 # 暂时注释掉有问题的导入，专注于新架构

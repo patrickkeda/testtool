@@ -48,7 +48,7 @@ from ...app_logging import get_logging_manager, get_test_logger, get_error_logge
 # 导入新架构组件
 from ...testcases.context import Context, create_context
 from ...testcases.register_steps import register_all_steps
-from ...testcases.simple_config import TestSequenceConfig
+from ...testcases.config import TestSequenceConfig
 from ...instruments.psu import create_power_supply
 
 
