@@ -7,6 +7,8 @@ PySide6>=6.5.0
 # 配置和数据处理
 pydantic>=2.0.0
 pyyaml>=6.0
+ruamel.yaml>=0.18.0
+ruamel.yaml>=0.18.0
 
 # 通信协议
 pymodbus>=3.5.0

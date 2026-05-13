@@ -5,6 +5,8 @@
 import json
 import logging
 import re
+import subprocess
+import sys
 import yaml
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -119,6 +121,168 @@ def save_test_sequence(config: TestSequenceConfig, file_path: str):
     except Exception as e:
         logger.error(f"保存测试序列配置失败: {e}")
         raise
+
+
+def resolve_project_requirements_txt() -> Optional[Path]:
+    """定位项目根目录下的 ``requirements.txt``（开发与打包）。"""
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        for candidate in (
+            exe_dir / "_internal" / "requirements.txt",
+            exe_dir / "requirements.txt",
+        ):
+            if candidate.is_file():
+                return candidate
+        return None
+    # TestTool/src/testcases/utils.py -> parents[2] == TestTool/
+    return Path(__file__).resolve().parents[2] / "requirements.txt"
+
+
+def run_pip_install_project_requirements() -> tuple[bool, str]:
+    """使用当前解释器执行 ``pip install -r requirements.txt``。
+
+    Returns
+    -------
+    (ok, message)
+        ``message`` 供界面展示（成功为简要说明，失败含尾部日志）。
+    """
+    if getattr(sys, "frozen", False):
+        return False, "当前为打包运行环境，无法在此一键 pip 安装；请使用安装包或手动部署依赖。"
+
+    req = resolve_project_requirements_txt()
+    if req is None or not req.is_file():
+        return False, f"未找到 requirements.txt（已查找打包目录与开发目录）。"
+
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                "-r",
+                str(req),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        out = (proc.stdout or "").strip()
+        err = (proc.stderr or "").strip()
+        tail = (err or out)[-4500:]
+        if proc.returncode != 0:
+            return False, f"pip 退出码 {proc.returncode}。末尾输出：\n{tail}"
+        for key in list(sys.modules):
+            if key == "ruamel" or key.startswith("ruamel."):
+                del sys.modules[key]
+        ok_msg = f"已根据文件安装依赖：\n{req}\n"
+        if out:
+            ok_msg += "\n" + out[-2500:]
+        return True, ok_msg
+    except subprocess.TimeoutExpired:
+        return False, "pip 安装超时（>10 分钟）。"
+    except Exception as exc:  # noqa: BLE001
+        return False, str(exc)
+
+
+def _ruamel_yaml_available() -> bool:
+    """是否已安装 ``ruamel.yaml``（不做自动 pip，请用菜单「一键安装依赖」或手动安装）。"""
+    try:
+        from ruamel.yaml import YAML  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def patch_sequence_yaml_step_operational_fields(
+    file_path: str,
+    step_id: str,
+    *,
+    retries: int,
+    retry_interval_ms: int,
+    timeout: int,
+    on_failure: str,
+) -> bool:
+    """仅更新序列 YAML 中某一 ``steps`` 条目的编排字段，尽量保留注释与排版。
+
+    使用 ``ruamel.yaml`` 就地读写。成功返回 ``True``；无法使用 ``ruamel.yaml``
+    或文件中找不到该 ``id`` 时返回 ``False``（由调用方决定是否全量 ``save_test_sequence``）。
+    """
+    if not _ruamel_yaml_available():
+        return False
+
+    from ruamel.yaml import YAML
+
+    path = Path(file_path)
+    if not path.suffix.lower() in (".yaml", ".yml"):
+        return False
+
+    yml = YAML()
+    yml.preserve_quotes = True
+    try:
+        yml.indent(mapping=2, sequence=4, offset=2)
+    except Exception:
+        pass
+
+    try:
+        with path.open(encoding="utf-8") as f:
+            root = yml.load(f)
+    except OSError as e:
+        logger.error("读取序列 YAML 失败: %s", e)
+        raise
+
+    if not isinstance(root, dict):
+        return False
+    steps = root.get("steps")
+    if not isinstance(steps, list):
+        return False
+
+    sid = (step_id or "").strip()
+    for st in steps:
+        if not isinstance(st, dict):
+            continue
+        if str(st.get("id", "")).strip() != sid:
+            continue
+        st["retries"] = int(retries)
+        st["retry_interval_ms"] = int(retry_interval_ms)
+        st["timeout"] = int(timeout)
+        st["on_failure"] = str(on_failure or "fail").lower()
+        try:
+            with path.open("w", encoding="utf-8") as f:
+                yml.dump(root, f)
+        except OSError as e:
+            logger.error("写入序列 YAML 失败: %s", e)
+            raise
+        logger.info("已局部更新序列 YAML 步骤字段: %s id=%s", path, sid)
+        return True
+
+    logger.warning("序列 YAML 中未找到步骤 id=%s，跳过局部更新", sid)
+    return False
+
+
+def save_step_operational_fields_to_sequence_yaml(
+    file_path: str,
+    step_id: str,
+    sequence: TestSequenceConfig,
+    *,
+    retries: int,
+    retry_interval_ms: int,
+    timeout: int,
+    on_failure: str,
+) -> None:
+    """保存单步编排字段到序列文件：优先局部补丁，否则全量 ``save_test_sequence``。"""
+    if patch_sequence_yaml_step_operational_fields(
+        file_path,
+        step_id,
+        retries=retries,
+        retry_interval_ms=retry_interval_ms,
+        timeout=timeout,
+        on_failure=on_failure,
+    ):
+        return
+    logger.info("回退为全量保存序列: %s", file_path)
+    save_test_sequence(sequence, file_path)
 
 
 def apply_mes_debug_station_from_config(seq: TestSequenceConfig) -> None:

@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Optional, Dict
 
-from PySide6.QtCore import Qt, QTranslator, Signal
+from PySide6.QtCore import Qt, QTranslator, Signal, QThread
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QPlainTextEdit,
     QDialog,
+    QProgressDialog,
 )
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -52,6 +53,18 @@ from ...instruments.psu import create_power_supply
 
 
 logger = logging.getLogger(__name__)
+
+
+class _PipInstallThread(QThread):
+    """后台执行 ``pip install -r requirements.txt``，避免阻塞 UI。"""
+
+    finished_with_result = Signal(bool, str)
+
+    def run(self) -> None:
+        from ...testcases.utils import run_pip_install_project_requirements
+
+        ok, msg = run_pip_install_project_requirements()
+        self.finished_with_result.emit(ok, msg)
 
 
 class MainWindow(QMainWindow):
@@ -214,6 +227,9 @@ class MainWindow(QMainWindow):
         self._tools_menu = menubar.addMenu(self._i18n.t("menu.tools"))
         self._tools_menu.addAction(self._i18n.t("menu.tools.seq_editor"), self._open_sequence_editor)
         self._tools_menu.addAction(self._i18n.t("menu.tools.step_library"), self._open_step_library)
+        self._act_install_deps = QAction(self._i18n.t("menu.tools.install_deps"), self)
+        self._act_install_deps.triggered.connect(self._on_install_project_dependencies)
+        self._tools_menu.addAction(self._act_install_deps)
         self._tools_menu.addSeparator()
         self.act_show_port_b = QAction(self._i18n.t("menu.tools.show_port_b"), self)
         self.act_show_port_b.setCheckable(True)
@@ -632,6 +648,7 @@ class MainWindow(QMainWindow):
         self._act_help_en.setText(self._i18n.t("menu.language.english"))
         self._act_help_ver.setText(self._i18n.t("menu.help.version"))
         self._tools_menu.setTitle(self._i18n.t("menu.tools"))
+        self._act_install_deps.setText(self._i18n.t("menu.tools.install_deps"))
         self.act_show_port_b.setText(self._i18n.t("menu.tools.show_port_b"))
 
         self.port_a.lbl_title.setText(self._i18n.t("panel.title_a"))
@@ -1783,6 +1800,46 @@ class MainWindow(QMainWindow):
             },
             "测试序列": config.test_sequence.file
         }
+
+    def _on_install_project_dependencies(self) -> None:
+        """工具菜单：一键 pip install -r requirements.txt（开发环境），带进度条。"""
+        from ...testcases.utils import resolve_project_requirements_txt
+
+        req = resolve_project_requirements_txt()
+        path_s = str(req) if req is not None else "—"
+        reply = QMessageBox.question(
+            self,
+            self._i18n.t("menu.tools.install_deps"),
+            self._i18n.t("msg.install_deps_confirm").format(path=path_s),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        progress = QProgressDialog(self)
+        progress.setWindowTitle(self._i18n.t("menu.tools.install_deps"))
+        progress.setLabelText(self._i18n.t("msg.install_deps_progress"))
+        progress.setCancelButton(None)
+        progress.setRange(0, 0)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+
+        thread = _PipInstallThread(self)
+
+        def on_done(ok: bool, msg: str) -> None:
+            progress.reset()
+            progress.close()
+            thread.deleteLater()
+            title = self._i18n.t("menu.tools.install_deps") if ok else self._i18n.t("dialog.error")
+            box = QMessageBox.information if ok else QMessageBox.warning
+            box(self, title, (msg or "")[:12000])
+
+        thread.finished_with_result.connect(on_done)
+        thread.finished.connect(progress.close)
+        thread.start()
 
     def _open_sequence_editor(self) -> None:
         """打开序列编辑器"""

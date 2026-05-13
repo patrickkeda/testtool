@@ -104,12 +104,22 @@ class StepPropertiesDialog(QDialog):
 
         root.addLayout(form)
 
+        scope = QLabel(
+            "仅改当前步骤；保存 yaml 需 ruamel（工具菜单可一键安装依赖），否则整文件保存。"
+            if not translator
+            else translator.t("seq.step_props.scope_hint"),
+        )
+        scope.setWordWrap(True)
+        scope.setStyleSheet("color: #555; font-size: 11px;")
+        root.addWidget(scope)
+
         self.chk_save = QCheckBox(
             "保存到序列 YAML 文件"
             if not translator
             else translator.t("seq.step_props.save_yaml"),
         )
-        self.chk_save.setChecked(bool(save_yaml_path))
+        # 默认不勾选：避免误以为「改一步」却整文件重写；仅显式勾选时才写磁盘
+        self.chk_save.setChecked(False)
         self.chk_save.setEnabled(bool(save_yaml_path))
         if not save_yaml_path:
             tip = QLabel(
@@ -144,10 +154,18 @@ class StepPropertiesDialog(QDialog):
         data = self.cb_on_failure.currentData()
         self._step.on_failure = str(data) if data is not None else "fail"
         if self.chk_save.isChecked() and self._save_yaml_path and self._sequence is not None:
-            from ...testcases.utils import save_test_sequence
+            from ...testcases.utils import save_step_operational_fields_to_sequence_yaml
 
             try:
-                save_test_sequence(self._sequence, self._save_yaml_path)
+                save_step_operational_fields_to_sequence_yaml(
+                    self._save_yaml_path,
+                    self._step.id,
+                    self._sequence,
+                    retries=self.sp_retries.value(),
+                    retry_interval_ms=self.sp_retry_interval.value(),
+                    timeout=self.sp_timeout.value(),
+                    on_failure=str(self.cb_on_failure.currentData() or "fail"),
+                )
                 self.did_save_yaml = True
             except Exception as e:  # noqa: BLE001
                 title = "保存失败" if not self._translator else self._translator.t("dialog.error")
