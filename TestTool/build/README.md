@@ -2,12 +2,16 @@
 
 本目录包含用于将 TestTool 打包成独立可执行文件的构建脚本和配置文件。
 
+## 发布源目录（约定）
+
+**打包与产线交付一律以本 Git 仓库为准**（本地目录名通常为 `TestTool-v0.4`，即包含内层 `TestTool/` 的那一层）。在内层 `TestTool\build\` 下运行 `build_exe.bat` 或 `build.ps1`。不要用未与该仓库同步的其它拷贝（例如随意解压到 `D:\1\TestTool`）当作主发布源，以免序列、MES 配置与代码版本不一致。
+
 ## 目录结构
 
 ```
 build/
 ├── TestTool.spec      # PyInstaller 配置文件
-├── build.bat          # Windows Batch 构建脚本
+├── build_exe.bat      # Windows 构建入口（调用 build.ps1）
 ├── build.ps1          # PowerShell 构建脚本
 └── README.md          # 本文件
 ```
@@ -23,7 +27,7 @@ build/
 
 ### 方法 1: 使用 Batch 脚本（推荐）
 
-1. 双击运行 `build.bat`
+1. 双击运行 `build_exe.bat`
 2. 选择打包模式：
    - `1` 完全打包（输出完整 `dist/TestTool`）
    - `2` 增量打包（比对打包库最新版本，仅输出改动文件）

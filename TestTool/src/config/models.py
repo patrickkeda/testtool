@@ -177,7 +177,12 @@ class MesConfig(BaseModel):
         return v
 
 
-class TestSequenceConfig(BaseModel):
+class TestSequenceFileRef(BaseModel):
+    """应用配置里「默认 / 最近使用的序列 YAML 路径」，不是序列内容本身。
+
+    与 ``testcases.config.TestSequenceConfig``（整条测试序列模型）区分命名，避免混淆。
+    """
+
     file: str = Field("D:/TestSequences/ft1.yaml")
     last_used: Optional[str] = Field(None, description="最后使用的测试序列文件路径")
 
@@ -268,7 +273,7 @@ class RootConfig(BaseModel):
     mes: MesConfig = Field(default_factory=MesConfig)
     printer: PrinterConfig = Field(default_factory=PrinterConfig)
     versions: VersionConfig = Field(default_factory=VersionConfig)
-    test_sequence: TestSequenceConfig = Field(default_factory=TestSequenceConfig)
+    test_sequence: TestSequenceFileRef = Field(default_factory=TestSequenceFileRef)
     selfcheck: SelfCheckConfig = Field(default_factory=SelfCheckConfig)
 
 

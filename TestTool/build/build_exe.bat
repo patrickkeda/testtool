@@ -3,11 +3,15 @@ setlocal EnableExtensions
 
 cd /d "%~dp0"
 for %%I in ("%~dp0..") do set "PROJECT_ROOT=%%~fI"
+for %%I in ("%PROJECT_ROOT%\..") do set "REPO_ROOT=%%~fI"
 set "DIST_DIR=%PROJECT_ROOT%\dist\TestTool"
 
 echo ========================================
 echo TestTool Build Launcher
 echo ========================================
+echo.
+echo [约定] 发布以 Git 仓库根目录为主 (TestTool-v0.4 等): %REPO_ROOT%
+echo        应用根目录 TestTool: %PROJECT_ROOT%
 echo.
 
 echo [0/4] Pre-clean: close TestTool.exe and clean dist\TestTool...

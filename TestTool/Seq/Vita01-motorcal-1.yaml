@@ -384,6 +384,39 @@ steps:
   at_config: null
   state_measurement_config: null
   manual_judgment_config: null
+- id: step_21
+  name: TTSWakeHead
+  type: engineer.test
+  params:
+    command: tts=0%
+    robot_ip: ${robot_ip}
+    port: ${robot_port}
+    timeout: 30
+  timeout: 35000
+  retries: 1
+  condition: null
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_22
+  name: HearWakeHeadAudioConfirm
+  type: utility.confirm
+  params:
+    title: 听觉确认
+    message: 请确认是否听到「大头起床了」语音提示？未听到请勿继续，并联系工程师。
+    confirm_text: 听到了
+    cancel_text: 未听到
+    allow_cancel: true
+  timeout: null
+  retries: 0
+  condition: null
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
 - id: step_mes_2
   name: MesEnd2UploadResult
   type: mes.upload_result

@@ -226,6 +226,10 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "TestTool Build Script" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
+$repoRoot = Split-Path -Parent $projectRoot
+Write-Host ("[约定] Git 仓库根目录 (如 TestTool-v0.4): {0}" -f $repoRoot) -ForegroundColor DarkCyan
+Write-Host ("       应用目录 TestTool: {0}" -f $projectRoot) -ForegroundColor DarkCyan
+Write-Host ""
 Write-Host "Current directory: $projectRoot" -ForegroundColor Yellow
 Write-Host ("Package mode: {0}" -f $PackageMode) -ForegroundColor Yellow
 if ($PackageMode -eq "incremental") {
