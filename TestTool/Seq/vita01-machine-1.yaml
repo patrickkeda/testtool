@@ -447,6 +447,24 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
+  # 拉取语音 license（tts=0），唤醒大头（tts=2）紧接其后；两条语音确认弹窗在 laydown 前
+  - id: step_15_voice_license
+    name: PullVoiceLicense
+    type: engineer.test
+    params:
+      command: 'tts=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
   # Step 15.1: 唤醒大头
   - id: step_15.1
     name: WakeUpHead
@@ -615,6 +633,43 @@ steps:
   #   at_config: null
   #   state_measurement_config: null
   #   manual_judgment_config: null
+
+  # 产线语音交互确认弹窗（laydown 前）
+  - id: step_15_after_license_wake_phrase
+    name: VoicePromptWakeHead
+    type: utility.confirm
+    params:
+      title: '语音：大头大头唤醒'
+      message: '请对机器狗说「大头大头唤醒」，确认已说完或已听到正确响应后点击「确认」继续。'
+      confirm_text: '确认'
+      cancel_text: '取消'
+      allow_cancel: true
+    timeout: 300000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_15_after_license_weather
+    name: VoicePromptWeather
+    type: utility.confirm
+    params:
+      title: '语音：问天气'
+      message: '请对机器狗说「今天天气怎么样」（或等价问法），确认已说完或已听到正确响应后点击「确认」继续。'
+      confirm_text: '确认'
+      cancel_text: '取消'
+      allow_cancel: true
+    timeout: 300000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
 
   # Step 23: 站立
   - id: step_23

@@ -11,7 +11,7 @@ metadata:
 variables:
   robot_ip: "192.168.126.2"
   robot_port: 3579
-  # X5 经 S100 跳板 SSH 录音测试（与 mic_test.py 拓扑一致）
+  # X5 录音：序列调用 Seq/scripts/mic_test.py（与旧版 Downloads 脚本逻辑一致）
   x5_ip: "192.168.127.10"
 
   # PLC Modbus RTU 串口参数（满足 9600 8O1）
@@ -146,15 +146,21 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # X5 8 路录音（经 S100 跳板 SSH，逻辑同 Downloads/mic_test.py；私钥用应用配置「SSH」页）
+  # X5 8 路录音：本机执行 Seq/scripts/mic_test.py（私钥用应用「SSH」页 → ${ssh_private_key_path}）
   - id: step_x5_mic
     name: X5MicRecord
-    type: case.mic_record_ssh
+    type: utility.run_python_script
     params:
-      jump_host: '${robot_ip}'
-      target_host: '${x5_ip}'
-      username: root
-      command: 'arecord -D remap8ch -c 8 -r 16000 -f S16_LE -d 5 /tmp/test.wav'
+      script: Seq/scripts/mic_test.py
+      args:
+        - --jump-host
+        - '${robot_ip}'
+        - --target-host
+        - '${x5_ip}'
+        - --user
+        - root
+        - --private-key-file
+        - '${ssh_private_key_path}'
     timeout: 90000
     retries: 1
     condition: null

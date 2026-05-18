@@ -8,7 +8,9 @@ from .steps.common.measure_current import MeasureCurrentStep
 from .steps.utility.delay import DelayStep
 from .steps.utility.ping_host import PingHostStep
 from .steps.utility.set_zenoh_client_mode import SetZenohClientModeStep
+from .steps.utility.ssh_sftp_pull_dir import SshSftpPullDirStep
 from .steps.utility.confirm import ConfirmStep
+from .steps.utility.run_python_script import RunPythonScriptStep
 from .steps.utility.generate_sn import GenerateSNStep
 from .steps.cases.boot_current import BootCurrentStep
 from .steps.cases.scan_sn import ScanSNStep as ScanSN
@@ -116,9 +118,21 @@ def register_all_steps():
     )
 
     register(
+        step_type="utility.ssh_sftp_pull_dir",
+        step_class=SshSftpPullDirStep,
+        aliases=["ssh.sftp_pull_dir", "sftp.pull_dir", "utility.sftp_pull"],
+    )
+
+    register(
         step_type="case.mic_record_ssh",
         step_class=MicRecordSshStep,
         aliases=["mic_record", "x5_mic_test", "ssh.mic_record", "case.x5_audio_record"],
+    )
+
+    register(
+        step_type="utility.run_python_script",
+        step_class=RunPythonScriptStep,
+        aliases=["run_python", "local.python_script"],
     )
     
     register(

@@ -441,7 +441,11 @@ class SequenceEditor(QMainWindow):
         """更新代码编辑器"""
         if self.current_sequence:
             import yaml
-            data = self.current_sequence.dict()
+
+            if hasattr(self.current_sequence, "model_dump"):
+                data = self.current_sequence.model_dump(mode="python")
+            else:
+                data = self.current_sequence.dict()
             yaml_content = yaml.dump(data, default_flow_style=False, allow_unicode=True)
             self.code_editor.setPlainText(yaml_content)
             

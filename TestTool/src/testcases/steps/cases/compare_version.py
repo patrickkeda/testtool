@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 import yaml
 
@@ -62,12 +62,14 @@ class CompareVersionStep(BaseStep):
                 error="CONFIG_VERSIONS_INVALID",
             )
 
-        mismatches = self._compare_versions(actual_payload, expected_versions)
+        only_keys = self._parse_only_keys(params.get("only_keys") or params.get("compare_keys"))
+        mismatches = self._compare_versions(actual_payload, expected_versions, only_keys)
         result_data = {
             "version_step_id": version_step_id,
             "config_path": str(config_file),
             "actual_version": actual_payload,
             "expected_version": expected_versions,
+            "only_keys": sorted(only_keys) if only_keys else None,
             "mismatches": mismatches,
         }
 
@@ -89,6 +91,19 @@ class CompareVersionStep(BaseStep):
         if result is not None:
             return result
         return ctx.get_data(step_id)
+
+    def _parse_only_keys(self, raw: Any) -> Optional[Set[str]]:
+        """If non-empty, only these device keys (e.g. LIDAR, X5) are compared."""
+        if raw is None:
+            return None
+        if isinstance(raw, str):
+            items = [raw]
+        elif isinstance(raw, (list, tuple, set)):
+            items = list(raw)
+        else:
+            return None
+        out = {str(x).upper().strip() for x in items if str(x).strip()}
+        return out or None
 
     def _extract_version_payload(self, step_result: Any) -> Optional[Dict[str, Any]]:
         candidates = []
@@ -186,10 +201,17 @@ class CompareVersionStep(BaseStep):
                 return candidate
         return None
 
-    def _compare_versions(self, actual: Dict[str, Any], expected: Dict[str, Any]) -> list[str]:
+    def _compare_versions(
+        self,
+        actual: Dict[str, Any],
+        expected: Dict[str, Any],
+        only_keys: Optional[Set[str]] = None,
+    ) -> list[str]:
         mismatches: list[str] = []
 
         for key in self.DUAL_KEYS:
+            if only_keys is not None and key not in only_keys:
+                continue
             expected_block = expected.get(key, {})
             actual_block = actual.get(key, {})
             if not isinstance(expected_block, dict):
@@ -208,6 +230,8 @@ class CompareVersionStep(BaseStep):
                     )
 
         for key in self.SINGLE_KEYS:
+            if only_keys is not None and key not in only_keys:
+                continue
             expected_block = expected.get(key, {})
             if not isinstance(expected_block, dict):
                 continue

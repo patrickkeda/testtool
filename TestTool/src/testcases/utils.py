@@ -31,6 +31,10 @@ def resolve_placeholders_in_params(params: Dict[str, Any], ctx: Any) -> Dict[str
             v = ctx.get_data(key, None)
             if v is not None:
                 return str(v)
+            if key == "sn" and hasattr(ctx, "get_sn"):
+                sn_val = ctx.get_sn()
+                if sn_val and str(sn_val).strip() not in ("", "NULL"):
+                    return str(sn_val).strip()
             return m.group(0)
 
         # 多轮替换：支持 variables 中「变量引用变量」
@@ -53,6 +57,33 @@ def resolve_placeholders_in_params(params: Dict[str, Any], ctx: Any) -> Dict[str
         return val
 
     return _walk(dict(params or {}))
+
+
+def resolve_template_string(template: str, ctx: Any) -> str:
+    """将单字符串中的 ``${var}`` 按 ``resolve_placeholders_in_params`` 规则展开。"""
+    return str(resolve_placeholders_in_params({"_": template}, ctx).get("_", template))
+
+
+def step_condition_should_run(raw: Optional[str], ctx: Any) -> bool:
+    """步骤级 ``condition``：空或未配置 → 执行；否则展开后按布尔语义判断。"""
+    if raw is None:
+        return True
+    s0 = str(raw).strip()
+    if not s0:
+        return True
+    s = resolve_template_string(s0, ctx).strip()
+    if "${" in s:
+        return True
+    sl = s.lower()
+    if sl in ("", "0", "false", "no", "off", "none"):
+        return False
+    if sl in ("1", "true", "yes", "on"):
+        return True
+    try:
+        return bool(int(sl))
+    except ValueError:
+        pass
+    return bool(s)
 
 
 def load_test_sequence(file_path: str) -> TestSequenceConfig:

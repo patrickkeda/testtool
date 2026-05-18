@@ -1100,8 +1100,9 @@ class MainWindow(QMainWindow):
             else:
                 self.alerts.appendPlainText(
                     f"[{port}] 提示: 配置中 ssh.private_key_path 为空；"
-                    f"utility.ssh_exec / mic_record_ssh 需在步骤里填写 private_key_file、"
-                    f"password 或 private_key_env，否则报「未配置认证方式」。"
+                    f"utility.ssh_exec / mic_record_ssh / utility.run_python_script（如 X5 麦克风）"
+                    f"需在步骤里填写 private_key_file、password 或 private_key_env，"
+                    f"否则 SSH 类步骤会报未配置认证或占位符无法展开。"
                 )
 
             imp_path = (
@@ -1304,11 +1305,12 @@ class MainWindow(QMainWindow):
             if status in ("Idle", "Preparing", "Running", "Paused") and hasattr(self.port_a, "set_overall_result"):
                 # 非完成态不展示整体结果
                 self.port_a.set_overall_result(None)
-            if status in ("Idle", "Completed") and hasattr(self, "_thread_a"):
-                self._running_ports.discard("A")  # 移除运行端口记录
-                self._thread_a.quit()
-                self._thread_a.wait()
-                # 不需要移动worker，因为下次会重新创建
+        # 与 Port B 一致：Completed / Idle 时必须结束 QThread，否则单步/整测结束后线程仍 isRunning，
+        # 下一次「仅运行此步骤」会误判端口忙，用户只能先点停止。
+        if status in ("Idle", "Completed") and hasattr(self, "_thread_a"):
+            self._running_ports.discard("A")
+            self._thread_a.quit()
+            self._thread_a.wait()
 
     def _on_worker_a_progress(self, percent: int) -> None:
         self.port_a.progress.setValue(percent)
@@ -1982,20 +1984,15 @@ class MainWindow(QMainWindow):
     def _update_sequence_tree(self, sequence) -> None:
         """更新序列树显示"""
         try:
-            print(f"DEBUG: 开始更新序列树，序列名称: {sequence.metadata.name}")
-            print(f"DEBUG: 步骤数量: {len(sequence.steps)}")
-            
             # 检查seq_model是否已初始化
             if not hasattr(self, 'seq_model') or self.seq_model is None:
-                print("DEBUG: seq_model未初始化，跳过序列树更新")
                 return
-            
+
             # 使用seq_model来管理序列树
             self.seq_model.clear()
-            
+
             # 构建显示名称：产品-测试站-版本-日期
             display_name = f"{sequence.metadata.product}-{sequence.metadata.station}-{sequence.metadata.version}-{sequence.metadata.created_at[:10].replace('-', '')}"
-            print(f"DEBUG: 显示名称: {display_name}")
             
             # 设置根节点
             self.seq_model.set_root(
@@ -2010,19 +2007,14 @@ class MainWindow(QMainWindow):
 
             # 添加步骤
             for i, step in enumerate(sequence.steps):
-                print(f"DEBUG: 处理步骤{i+1}: ID='{step.id}', Name='{step.name}'")
-                
                 # 如果步骤名称为空，使用步骤ID作为显示名称
                 if step.name and step.name.strip():
                     display_name = step.name
-                    print(f"DEBUG: 使用步骤名称: '{display_name}'")
                 else:
                     display_name = step.id
-                    print(f"DEBUG: 使用步骤ID: '{display_name}'")
-                
+
                 # 使用seq_model添加步骤
                 step_item = self.seq_model.add_step(step.id, display_name, step)
-                print(f"DEBUG: 添加步骤完成: {step_item.text(0)} - {step_item.text(1)}")
                 
                 # 检查断点状态
                 if step.id in self._breakpoints:
@@ -2034,9 +2026,7 @@ class MainWindow(QMainWindow):
             
             # 展开根节点
             self.seq_model._root_item.setExpanded(True)
-            
-            print("DEBUG: 序列树更新完成")
-            
+
         except Exception as e:
             print(f"更新序列树时出错: {e}")
             import traceback

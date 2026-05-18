@@ -8,7 +8,7 @@ from __future__ import annotations
 import sys
 from typing import Tuple
 
-from PySide6.QtCore import QObject, Slot, Qt, QMetaObject, Q_ARG, Q_RETURN_ARG
+from PySide6.QtCore import QObject, QThread, Slot, Qt, QMetaObject, Q_ARG
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 from src.testcases.steps.cases.scan_sn import ScanSNDialog
@@ -47,6 +47,76 @@ def find_testtool_main_window():
 
 class _UIInvoker(QObject):
     """主线程UI调用器。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._sftp_pull_progress_dlg = None
+        self._sftp_pull_dest_dir = ""
+
+    @Slot(str, str, int)
+    def sftp_pull_progress_open(self, title: str, dest_dir: str, total: int) -> None:
+        """SFTP 拉取时显示进度条；须从 GUI 线程或通过 BlockingQueuedConnection 调用。"""
+        from PySide6.QtWidgets import QProgressDialog
+
+        self.sftp_pull_progress_close()
+        self._sftp_pull_dest_dir = dest_dir or ""
+        parent = _find_parent_window()
+        dlg = QProgressDialog(parent)
+        dlg.setWindowTitle(title or "正在导出数据")
+        dlg.setLabelText(f"保存到本机：\n{self._sftp_pull_dest_dir}\n\n准备下载…")
+        dlg.setCancelButton(None)
+        dlg.setMinimumDuration(0)
+        dlg.setAutoClose(True)
+        dlg.setAutoReset(True)
+        dlg.setRange(0, max(1, int(total)))
+        dlg.setValue(0)
+        dlg.setWindowModality(Qt.WindowModal)
+        dlg.show()
+        self._sftp_pull_progress_dlg = dlg
+        try:
+            app = QApplication.instance()
+            if app is not None:
+                app.processEvents()
+        except Exception:
+            pass
+
+    @Slot(int, str)
+    def sftp_pull_progress_update(self, current: int, detail: str) -> None:
+        dlg = self._sftp_pull_progress_dlg
+        if dlg is None:
+            return
+        dlg.setValue(min(int(current), dlg.maximum()))
+        base = self._sftp_pull_dest_dir or ""
+        tail = (detail or "").strip()
+        if tail:
+            dlg.setLabelText(f"保存到本机：\n{base}\n\n正在下载：\n{tail}")
+        else:
+            dlg.setLabelText(f"保存到本机：\n{base}\n\n下载中…")
+        try:
+            app = QApplication.instance()
+            if app is not None:
+                app.processEvents()
+        except Exception:
+            pass
+
+    @Slot()
+    def sftp_pull_progress_close(self) -> None:
+        dlg = self._sftp_pull_progress_dlg
+        if dlg is not None:
+            try:
+                dlg.setValue(dlg.maximum())
+            except Exception:
+                pass
+            dlg.close()
+            dlg.deleteLater()
+        self._sftp_pull_progress_dlg = None
+        self._sftp_pull_dest_dir = ""
+        try:
+            app = QApplication.instance()
+            if app is not None:
+                app.processEvents()
+        except Exception:
+            pass
 
     @Slot(str, str, str, int, str, bool, result=tuple)
     def show_scan_sn(
@@ -93,6 +163,64 @@ def get_ui_invoker() -> _UIInvoker:
         # 确保对象属于主线程
         _invoker_instance.moveToThread(app.thread())
     return _invoker_instance
+
+
+def _sftp_progress_invoke_mode():
+    app = QApplication.instance()
+    if app is None:
+        return None
+    if QThread.currentThread() == app.thread():
+        return Qt.DirectConnection
+    return Qt.BlockingQueuedConnection
+
+
+def invoke_sftp_pull_progress_open(title: str, dest_dir: str, total: int) -> bool:
+    """在工作线程中阻塞调用：于主线程打开 SFTP 导出进度条。无 GUI 时返回 False。"""
+    mode = _sftp_progress_invoke_mode()
+    if mode is None:
+        return False
+    try:
+        inv = get_ui_invoker()
+    except Exception:
+        return False
+    return bool(
+        QMetaObject.invokeMethod(
+            inv,
+            "sftp_pull_progress_open",
+            mode,
+            Q_ARG(str, title or "正在导出数据"),
+            Q_ARG(str, dest_dir or ""),
+            Q_ARG(int, int(total)),
+        )
+    )
+
+
+def invoke_sftp_pull_progress_update(current: int, detail: str) -> None:
+    mode = _sftp_progress_invoke_mode()
+    if mode is None:
+        return
+    try:
+        inv = get_ui_invoker()
+    except Exception:
+        return
+    QMetaObject.invokeMethod(
+        inv,
+        "sftp_pull_progress_update",
+        mode,
+        Q_ARG(int, int(current)),
+        Q_ARG(str, detail or ""),
+    )
+
+
+def invoke_sftp_pull_progress_close() -> None:
+    mode = _sftp_progress_invoke_mode()
+    if mode is None:
+        return
+    try:
+        inv = get_ui_invoker()
+    except Exception:
+        return
+    QMetaObject.invokeMethod(inv, "sftp_pull_progress_close", mode)
 
 
 def _find_parent_window():
@@ -364,14 +492,33 @@ def _show_pass_fail_dialog(
 
 
 def _show_countdown_dialog(
-    title: str, message: str, duration_ms: int, allow_interrupt: bool = False
-) -> bool:
-    """在主线程显示自动结束的倒计时对话框。allow_interrupt=True 时允许关闭窗口，视为未正常完成（返回 False）。"""
+    title: str,
+    message: str,
+    duration_ms: int,
+    allow_interrupt: bool = False,
+    *,
+    completion_buttons: bool = False,
+    ok_button_text: str = "煲机无异常",
+    abnormal_button_text: str = "煲机异常",
+) -> Tuple[bool, str]:
+    """在主线程显示倒计时对话框。
+
+    返回 ``(accepted, outcome)``：``accepted`` 为是否正常结束；``outcome`` 在
+    ``completion_buttons=False`` 且正常结束时为空字符串；在煲机双按钮模式下为
+    ``\"ok\"`` 或 ``\"abnormal\"``。「煲机异常」可随时点击；「煲机无异常」须待倒计时结束方可点。
+    关闭窗口（允许中断时）为 ``(False, \"\")``。
+    """
     from time import monotonic
 
     from PySide6.QtCore import QTimer
     from PySide6.QtGui import QFont
-    from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout
+    from PySide6.QtWidgets import (
+        QDialog,
+        QHBoxLayout,
+        QLabel,
+        QPushButton,
+        QVBoxLayout,
+    )
 
     safe_duration_ms = max(0, int(duration_ms))
     parent_window = _find_parent_window()
@@ -379,7 +526,7 @@ def _show_countdown_dialog(
     dialog = QDialog(parent_window)
     dialog.setWindowTitle(title or "倒计时")
     dialog.setModal(True)
-    dialog.setMinimumSize(460, 220)
+    dialog.setMinimumSize(460, 280)
     dialog.setWindowFlag(Qt.WindowCloseButtonHint, bool(allow_interrupt))
 
     layout = QVBoxLayout(dialog)
@@ -393,6 +540,44 @@ def _show_countdown_dialog(
     countdown_label.setAlignment(Qt.AlignCenter)
     countdown_label.setFont(QFont("Consolas", 24))
     layout.addWidget(countdown_label)
+
+    outcome_holder: dict[str, str] = {"v": ""}
+
+    ok_btn = QPushButton(ok_button_text or "煲机无异常")
+    abnormal_btn = QPushButton(abnormal_button_text or "煲机异常")
+    if completion_buttons:
+        ok_btn.setEnabled(False)
+        abnormal_btn.setEnabled(True)
+    else:
+        ok_btn.setEnabled(False)
+        abnormal_btn.setEnabled(False)
+
+    timer = QTimer(dialog)
+    timer.setInterval(200)
+
+    def on_ok_click() -> None:
+        timer.stop()
+        outcome_holder["v"] = "ok"
+        dialog.accept()
+
+    def on_abnormal_click() -> None:
+        timer.stop()
+        outcome_holder["v"] = "abnormal"
+        dialog.accept()
+
+    ok_btn.clicked.connect(on_ok_click)
+    abnormal_btn.clicked.connect(on_abnormal_click)
+
+    button_row = QHBoxLayout()
+    button_row.addStretch(1)
+    button_row.addWidget(ok_btn)
+    button_row.addWidget(abnormal_btn)
+    button_row.addStretch(1)
+    layout.addLayout(button_row)
+
+    if not completion_buttons:
+        ok_btn.hide()
+        abnormal_btn.hide()
 
     layout.addStretch(1)
 
@@ -408,10 +593,16 @@ def _show_countdown_dialog(
 
         if remaining_ms <= 0:
             timer.stop()
-            dialog.accept()
+            if not completion_buttons:
+                dialog.accept()
+            else:
+                ok_btn.setEnabled(True)
+                label.setText(
+                    (message or "")
+                    + "\n\n倒计时已结束，请选择煲机结果后点击对应按钮（无异常 / 异常均会继续后续拉取数据）。"
+                )
+                countdown_label.setText("00:00")
 
-    timer = QTimer(dialog)
-    timer.setInterval(200)
     timer.timeout.connect(update_label)
     update_label()
     timer.start()
@@ -423,7 +614,15 @@ def _show_countdown_dialog(
         except Exception:
             pass
 
-    return dialog.exec() == QDialog.Accepted
+    accepted = dialog.exec() == QDialog.Accepted
+    if not accepted:
+        return False, ""
+    if completion_buttons:
+        oc = outcome_holder["v"].strip()
+        if oc not in ("ok", "abnormal"):
+            return False, ""
+        return True, oc
+    return True, ""
 
 
 def invoke_in_gui_countdown(
@@ -433,8 +632,15 @@ def invoke_in_gui_countdown(
     port: str = "PortA",
     *,
     allow_interrupt: bool = False,
-) -> bool:
-    """在主线程显示自动结束的倒计时提示框。关闭窗口（allow_interrupt 时）返回 False。"""
+    completion_buttons: bool = False,
+    ok_button_text: str = "煲机无异常",
+    abnormal_button_text: str = "煲机异常",
+) -> Tuple[bool, str]:
+    """在主线程显示倒计时提示框。
+
+    返回 ``(accepted, outcome)``。``outcome`` 为 ``\"\"``、``\"ok\"`` 或 ``\"abnormal\"``（见
+    :func:`_show_countdown_dialog`；「煲机异常」可随时点，「煲机无异常」须倒计时结束）。兼容旧调用：仅判断 ``result[0]`` 即等价于原 bool。
+    """
     from PySide6.QtCore import QEventLoop, QThread, Signal
 
     app = QApplication.instance()
@@ -445,29 +651,53 @@ def invoke_in_gui_countdown(
     main_thread = app.thread()
 
     if current_thread == main_thread:
-        return _show_countdown_dialog(title, message, duration_ms, allow_interrupt)
+        return _show_countdown_dialog(
+            title,
+            message,
+            duration_ms,
+            allow_interrupt,
+            completion_buttons=completion_buttons,
+            ok_button_text=ok_button_text,
+            abnormal_button_text=abnormal_button_text,
+        )
 
     class CountdownHelper(QObject):
-        finished = Signal(bool)
+        finished = Signal(bool, str)
 
-        @Slot(str, str, int, bool)
-        def show_dialog(self, dlg_title, dlg_message, dlg_duration_ms, dlg_allow_interrupt):
+        @Slot(str, str, int, bool, bool, str, str)
+        def show_dialog(
+            self,
+            dlg_title: str,
+            dlg_message: str,
+            dlg_duration_ms: int,
+            dlg_allow_interrupt: bool,
+            dlg_completion_buttons: bool,
+            dlg_ok_text: str,
+            dlg_abnormal_text: str,
+        ) -> None:
             try:
-                result = _show_countdown_dialog(
-                    dlg_title, dlg_message, dlg_duration_ms, dlg_allow_interrupt
+                ok, oc = _show_countdown_dialog(
+                    dlg_title,
+                    dlg_message,
+                    dlg_duration_ms,
+                    dlg_allow_interrupt,
+                    completion_buttons=dlg_completion_buttons,
+                    ok_button_text=dlg_ok_text,
+                    abnormal_button_text=dlg_abnormal_text,
                 )
             except Exception:
-                result = False
-            self.finished.emit(result)
+                ok, oc = False, ""
+            self.finished.emit(ok, oc or "")
 
     helper = CountdownHelper()
     helper.moveToThread(main_thread)
 
     loop = QEventLoop()
-    result_holder = {"result": False}
+    result_holder: dict[str, bool | str] = {"ok": False, "outcome": ""}
 
-    def on_finished(res: bool):
-        result_holder["result"] = res
+    def on_finished(accepted: bool, outcome: str) -> None:
+        result_holder["ok"] = accepted
+        result_holder["outcome"] = outcome or ""
         loop.quit()
 
     helper.finished.connect(on_finished)
@@ -480,10 +710,13 @@ def invoke_in_gui_countdown(
         Q_ARG(str, message),
         Q_ARG(int, int(duration_ms)),
         Q_ARG(bool, bool(allow_interrupt)),
+        Q_ARG(bool, bool(completion_buttons)),
+        Q_ARG(str, ok_button_text or "煲机无异常"),
+        Q_ARG(str, abnormal_button_text or "煲机异常"),
     )
 
     loop.exec()
-    return result_holder["result"]
+    return bool(result_holder["ok"]), str(result_holder.get("outcome") or "")
 
 
 def invoke_in_gui_confirmation(

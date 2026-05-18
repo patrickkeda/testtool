@@ -150,6 +150,7 @@ steps:
   at_config: null
   state_measurement_config: null
   manual_judgment_config: null
+# 等100秒 -> set_zenoh（可选 SSH 查 X5 服务如 systemctl；通过则跳过下电/上电/120s）-> 否则 PLC 下电 -> 3s -> 上电 -> 120s -> 工程模式
 - id: step_6b_zenoh
   name: SetZenohClientMode
   type: utility.set_zenoh_client
@@ -159,11 +160,155 @@ steps:
     x5_host: ${x5_ip}
     ssh_key_file: ${zenoh_ssh_key_file}
     enforce_commit_hash_check: false
-    subprocess_timeout_sec: 900
-  timeout: 960000
+    subprocess_timeout_sec: 240
+    script_attempt_max: 4
+    retry_interval_sec: 5
+    retry_if_output_contains: 192.168.127.10|no route to host
+    post_success_ssh_host: ${x5_ip}
+    post_success_ssh_user: root
+    post_success_ssh_command: systemctl is-active vita01.target
+    post_success_ssh_connect_timeout_sec: 20
+    post_success_ssh_exec_timeout_sec: 45
+  timeout: 1200000
   retries: 0
   retry_interval_ms: 1000
   condition: null
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_6c_off_2053
+  name: PlcHeadPowerOff2053
+  type: plc.modbus.write_register
+  params:
+    address: 2053
+    value: 0
+    unit_id: ${plc_unit_id}
+    use_coil: true
+    description: Zenoh成功后狗头下电 002053=0
+  timeout: 5000
+  retries: 2
+  retry_interval_ms: 1000
+  condition: '${zenoh_need_repower}'
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_6c_off_2052
+  name: PlcS100RelayOff2052
+  type: plc.modbus.write_register
+  params:
+    address: 2052
+    value: 0
+    unit_id: ${plc_unit_id}
+    use_coil: true
+    description: S100侧下电 002052=0
+  timeout: 5000
+  retries: 2
+  retry_interval_ms: 1000
+  condition: '${zenoh_need_repower}'
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_6c_off_2049
+  name: PlcCylinderOff2049
+  type: plc.modbus.write_register
+  params:
+    address: 2049
+    value: 0
+    unit_id: ${plc_unit_id}
+    use_coil: true
+    description: 气缸驱动回零 002049=0
+  timeout: 5000
+  retries: 2
+  retry_interval_ms: 1000
+  condition: '${zenoh_need_repower}'
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_6d_wait_3s
+  name: WaitAfterPowerOff
+  type: utility.delay
+  params:
+    duration_ms: 3000
+  timeout: 10000
+  retries: 0
+  retry_interval_ms: 1000
+  condition: '${zenoh_need_repower}'
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_6e_on_2049
+  name: FixHeadWithCylinderAgain
+  type: plc.modbus.write_register
+  params:
+    address: 2049
+    value: 1
+    unit_id: ${plc_unit_id}
+    use_coil: true
+    description: 再次夹紧 002049=1
+  timeout: 5000
+  retries: 2
+  retry_interval_ms: 1000
+  condition: '${zenoh_need_repower}'
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_6f_on_2053
+  name: HeadPowerOnAgain
+  type: plc.modbus.write_register
+  params:
+    address: 2053
+    value: 1
+    unit_id: ${plc_unit_id}
+    use_coil: true
+    description: 狗头上电 002053=1
+  timeout: 5000
+  retries: 2
+  retry_interval_ms: 1000
+  condition: '${zenoh_need_repower}'
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_6g_on_2052
+  name: S100PowerOnAgain
+  type: plc.modbus.write_register
+  params:
+    address: 2052
+    value: 1
+    unit_id: ${plc_unit_id}
+    use_coil: true
+    description: S100上电 002052=1
+  timeout: 5000
+  retries: 2
+  retry_interval_ms: 1000
+  condition: '${zenoh_need_repower}'
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_6h_wait_120s
+  name: WaitAfterRepower
+  type: utility.delay
+  params:
+    duration_ms: 120000
+  timeout: 130000
+  retries: 0
+  retry_interval_ms: 1000
+  condition: '${zenoh_need_repower}'
   expect: null
   on_failure: fail
   at_config: null
@@ -342,6 +487,40 @@ steps:
   params:
     duration_ms: 2000
   timeout: 2200
+  retries: 0
+  retry_interval_ms: 1000
+  condition: null
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_9
+  name: ReadVersion
+  type: engineer.test
+  params:
+    command: version=0%
+    robot_ip: ${robot_ip}
+    port: ${robot_port}
+    timeout: 30
+  timeout: 35000
+  retries: 1
+  retry_interval_ms: 1000
+  condition: null
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_9_compare_lidar
+  name: LidarVersionCheck
+  type: case.compare_version
+  params:
+    version_step_id: step_9
+    config_path: Config/config.yaml
+    only_keys:
+    - LIDAR
+  timeout: 5000
   retries: 0
   retry_interval_ms: 1000
   condition: null

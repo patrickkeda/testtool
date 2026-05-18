@@ -46,6 +46,9 @@ DEFAULT_CONFIG = {
 
 CONFIG_FILE = os.path.expanduser("~/.ota_deploy_config.json")
 
+# 远端 OTA 目录内保留的升级轨迹子目录（清理包时不清除）
+OTA_TRACE_DIRNAME = "_ota_deploy_trace"
+
 def load_config():
     cfg = dict(DEFAULT_CONFIG)
     if os.path.exists(CONFIG_FILE):
@@ -93,6 +96,10 @@ class SSHHelper:
         else:
             kwargs["password"] = self.password
         self.client.connect(**kwargs)
+        # 经 S100 跳转或大包 SFTP 时链路较长，避免中间 NAT/防火墙 idle 断连导致偶发传包失败
+        t = self.client.get_transport()
+        if t:
+            t.set_keepalive(60)
 
     def upload_file(self, local_src, remote_dst, progress_cb=None):
         if remote_dst.endswith('/'):
@@ -300,6 +307,47 @@ class DeployExecutor:
             done += 1
             self.log(f"--- 同步进度: {done}/{total} ---")
 
+    def _ota_trace_path(self, ota_dir):
+        return f"{ota_dir.rstrip('/')}/{OTA_TRACE_DIRNAME}"
+
+    def _ota_prep_cmd(self, ota_dir):
+        """准备 OTA 目录：清空旧包，保留轨迹子目录。"""
+        q = shlex.quote(ota_dir.rstrip("/"))
+        return (
+            "mount -o remount,rw /app && "
+            f"mkdir -p {q} && "
+            f"for _ota_f in {q}/*; do "
+            f'[ -e "$_ota_f" ] || continue; '
+            f'[ "$(basename "$_ota_f")" = "{OTA_TRACE_DIRNAME}" ] && continue; '
+            f'rm -rf "$_ota_f"; done'
+        )
+
+    def _ota_cleanup_keep_trace_shell(self, ota_dir):
+        q = shlex.quote(ota_dir.rstrip("/"))
+        return (
+            f"for _ota_f in {q}/*; do "
+            f'[ -e "$_ota_f" ] || continue; '
+            f'[ "$(basename "$_ota_f")" = "{OTA_TRACE_DIRNAME}" ] && continue; '
+            f'rm -rf "$_ota_f"; done'
+        )
+
+    def _ota_trace_init_shell(self, ota_dir):
+        """在远端 shell 中定义 ota_tr，写入 session.log（位于 ota 目录下的轨迹子目录）。"""
+        td = self._ota_trace_path(ota_dir)
+        return (
+            f"OTA_T={shlex.quote(td)}; "
+            "ota_tr() { mkdir -p \"$OTA_T\" && printf '%s %s\\n' "
+            "\"$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date)\" \"$*\" >> \"$OTA_T/session.log\"; }"
+        )
+
+    def _remote_ota_trace(self, ssh, ota_dir, message, log_label="OTA trace"):
+        """经当前 SSH 在远端 ota 轨迹目录追加一行（用于非 tmux 路径或上传后节点）。"""
+        line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {message}".replace("\n", " ").replace("\r", " ")
+        esc = line.replace("'", "'\"'\"'")
+        td = self._ota_trace_path(ota_dir)
+        cmd = f"mkdir -p '{td}' && printf '%s\\n' '{esc}' >> '{td}/session.log'"
+        self._exec_and_check(ssh, cmd, log_label, log_fail=False)
+
     def _make_progress_cb(self, label, filename, total_size):
         last_pct = [-1]
         def _cb(transferred, total):
@@ -330,15 +378,45 @@ class DeployExecutor:
         for label, ssh, app_p, sys_p in valid_targets:
             ota_dir = self.cfg["ota_dir"]
             self.log(f"[{label} OTA] 上传升级包...")
-            _, mk_out, _ = ssh.client.exec_command(f"mount -o remount,rw /app && mkdir -p {ota_dir} && rm -rf {ota_dir}/*")
-            mk_out.channel.recv_exit_status()
+            prep = self._ota_prep_cmd(ota_dir)
+            rc_prep, _, err_prep = self._exec_and_check(ssh, prep, f"{label} OTA prep", log_fail=True)
+            if rc_prep != 0:
+                detail = err_prep or f"mount/mkdir/rm 未全部成功，请检查 /app 是否可写、{ota_dir} 是否可用"
+                raise RuntimeError(f"[{label} OTA] 准备目录失败 (exit {rc_prep}): {detail}")
+            self._remote_ota_trace(ssh, ota_dir, f"[{label}] OTA 目录已准备，开始上传包", f"{label} OTA")
             sftp = ssh.client.open_sftp()
             app_name = os.path.basename(app_p)
             sys_name = os.path.basename(sys_p)
-            sftp.put(app_p, f"{ota_dir}/{app_name}", callback=self._make_progress_cb(f"{label} OTA", app_name, os.path.getsize(app_p)))
-            sftp.put(sys_p, f"{ota_dir}/{sys_name}", callback=self._make_progress_cb(f"{label} OTA", sys_name, os.path.getsize(sys_p)))
-            sftp.close()
-            self.log(f"[{label} OTA] 上传完成。")
+            app_sz = os.path.getsize(app_p)
+            sys_sz = os.path.getsize(sys_p)
+            r_app = f"{ota_dir}/{app_name}"
+            r_sys = f"{ota_dir}/{sys_name}"
+            try:
+                sftp.put(app_p, r_app, callback=self._make_progress_cb(f"{label} OTA", app_name, app_sz))
+                sftp.put(sys_p, r_sys, callback=self._make_progress_cb(f"{label} OTA", sys_name, sys_sz))
+            finally:
+                sftp.close()
+            for rpath, expect, fname in ((r_app, app_sz, app_name), (r_sys, sys_sz, sys_name)):
+                rc_sz, out_sz, _ = self._exec_and_check(
+                    ssh, f"wc -c < '{rpath}' 2>/dev/null", f"{label} OTA", log_fail=False
+                )
+                if rc_sz != 0:
+                    raise RuntimeError(f"[{label} OTA] 上传后无法读取远程文件大小: {fname}")
+                try:
+                    got = int((out_sz or "").strip())
+                except ValueError:
+                    raise RuntimeError(f"[{label} OTA] 远程大小解析失败: {fname} → {out_sz!r}")
+                if got != expect:
+                    raise RuntimeError(
+                        f"[{label} OTA] 远程文件大小不一致（可能传包中断）: {fname} 本地 {expect} 字节, 远程 {got} 字节"
+                    )
+            self.log(f"[{label} OTA] 上传完成（已校验大小）。")
+            self._remote_ota_trace(
+                ssh,
+                ota_dir,
+                f"[{label}] 升级包已上传并校验大小 OK app={app_name} sys={sys_name}",
+                f"{label} OTA",
+            )
 
         if self.cfg["use_tmux"]:
             for label, ssh, _, _ in valid_targets:
@@ -359,12 +437,17 @@ class DeployExecutor:
                 x5_log_file = "/tmp/ota_x5.log"
                 self._exec_and_check(x5_ssh, f"rm -f '{x5_result_file}'", "X5 OTA", log_fail=False)
                 self._exec_and_check(x5_ssh, f"rm -f '{x5_log_file}'", "X5 OTA", log_fail=False)
+                x5_td = self._ota_trace_init_shell(self.cfg["ota_dir"])
+                x5_clean = self._ota_cleanup_keep_trace_shell(self.cfg["ota_dir"])
                 x5_inner_cmd = (
+                    f"{x5_td}; ota_tr \"[X5] ota_tool 即将执行 (tmux)\"; "
                     f"{x5_ota_cmd} > '{x5_log_file}' 2>&1; "
                     f"x5_rc=$?; "
+                    f"ota_tr \"[X5] ota_tool 已退出 rc=$x5_rc\"; "
                     f"echo $x5_rc > '{x5_result_file}'; "
                     f"echo x5_rc=$x5_rc >> '{x5_log_file}'; "
-                    f"rm -rf {self.cfg['ota_dir']}/*; "
+                    f"ota_tr \"[X5] 清理 OTA 目录(保留 {OTA_TRACE_DIRNAME})\"; "
+                    f"{x5_clean}; "
                     f"echo tmux_done_x5_rc=$x5_rc >> '{x5_log_file}'"
                 )
                 self._start_tmux_session(x5_ssh, x5_session, x5_inner_cmd, "X5 OTA")
@@ -394,9 +477,13 @@ class DeployExecutor:
                 
                 eng_cmd, grn_cmd, red_cmd = self._build_screen_cmds("localhost")
 
+                s100_td = self._ota_trace_init_shell(self.cfg["ota_dir"])
+                s100_clean = self._ota_cleanup_keep_trace_shell(self.cfg["ota_dir"])
                 s100_inner_cmd = (
+                    f"{s100_td}; ota_tr \"[S100] ota_tool 即将执行 (tmux 双机)\"; "
                     f"{s100_ota_cmd} > '{s100_log_file}' 2>&1; "
                     f"s100_rc=$?; "
+                    f"ota_tr \"[S100] ota_tool 已退出 rc=$s100_rc\"; "
                     f"echo $s100_rc > '{s100_result_file}'; "
                     f"echo s100_rc=$s100_rc >> '{s100_log_file}'; "
                     f"x5_rc=125; "
@@ -406,6 +493,7 @@ class DeployExecutor:
                     f"if [ -n \"$x5_val\" ]; then x5_rc=$x5_val; x5_fetch_status=ok; break; fi; "
                     f"sleep 1; "
                     f"done; "
+                    f"ota_tr \"[S100] 已轮询 X5 结果 x5_rc=$x5_rc fetch=$x5_fetch_status\"; "
                     f"echo s100_rc=$s100_rc > '{merge_detail_file}'; "
                     f"echo x5_rc=$x5_rc >> '{merge_detail_file}'; "
                     f"echo x5_fetch_status=$x5_fetch_status >> '{merge_detail_file}'; "
@@ -416,8 +504,10 @@ class DeployExecutor:
                     f"echo screen=red >> '{merge_detail_file}'; "
                     f"{eng_cmd}; {red_cmd}; "
                     f"fi; "
+                    f"ota_tr \"[S100] 双机汇总完成 s100_rc=$s100_rc x5_rc=$x5_rc fetch=$x5_fetch_status\"; "
                     f"{cleanup_key_cmd}"
-                    f"rm -rf {self.cfg['ota_dir']}/*; "
+                    f"ota_tr \"[S100] 清理 OTA 目录(保留 {OTA_TRACE_DIRNAME})\"; "
+                    f"{s100_clean}; "
                     f"echo tmux_done_s100_rc=$s100_rc >> '{s100_log_file}'"
                 )
                 self._start_tmux_session(s100_ssh, s100_session, s100_inner_cmd, "S100 OTA")
@@ -440,9 +530,13 @@ class DeployExecutor:
                 api_ip = "localhost" if label == "S100" else "192.168.127.2"
                 eng_cmd, grn_cmd, red_cmd = self._build_screen_cmds(api_ip)
 
+                one_td = self._ota_trace_init_shell(ota_dir)
+                one_clean = self._ota_cleanup_keep_trace_shell(ota_dir)
                 tmux_inner_cmd = (
+                    f"{one_td}; ota_tr \"[{label}] ota_tool 即将执行 (tmux 单机)\"; "
                     f"{cmd} > '{log_file}' 2>&1; "
                     f"ota_rc=$?; "
+                    f"ota_tr \"[{label}] ota_tool 已退出 rc=$ota_rc\"; "
                     f"echo $ota_rc > '{result_file}'; "
                     f"echo ota_rc=$ota_rc >> '{log_file}'; "
                     f"if [ \"$ota_rc\" = \"0\" ]; then "
@@ -450,7 +544,8 @@ class DeployExecutor:
                     f"else "
                     f"echo screen=red >> '{log_file}'; {eng_cmd}; {red_cmd}; "
                     f"fi; "
-                    f"rm -rf {ota_dir}/*; "
+                    f"ota_tr \"[{label}] 清理 OTA 目录(保留 {OTA_TRACE_DIRNAME})\"; "
+                    f"{one_clean}; "
                     f"echo tmux_done_ota_rc=$ota_rc >> '{log_file}'"
                 )
                 self._start_tmux_session(ssh, session_name, tmux_inner_cmd, f"{label} OTA")
@@ -460,6 +555,8 @@ class DeployExecutor:
                 self.log(f"[{label} OTA] 将在执行完成后触发屏幕颜色提示")
 
             self.log("✅ tmux 任务已全部提交，当前连接可断开，不影响后台升级。")
+            td = self._ota_trace_path(self.cfg["ota_dir"])
+            self.log(f"ℹ️ 远端 OTA 关键节点记录在: {td}/session.log")
             self.log("ℹ️ 后续可 SSH 登录执行: tmux ls / tmux attach -t ota_s100|ota_x5 / cat /tmp/ota_*.result")
             return
         else:
@@ -479,7 +576,9 @@ class DeployExecutor:
     def _ota_exec_and_monitor(self, label, ssh, app_p, sys_p):
         ota_dir = self.cfg["ota_dir"]
         cmd = f"cd {ota_dir} && /usr/hobot/bin/ota_tool -n -p {os.path.basename(app_p)} -p {os.path.basename(sys_p)}"
+        clean = self._ota_cleanup_keep_trace_shell(ota_dir)
         try:
+            self._remote_ota_trace(ssh, ota_dir, f"[{label}] 前台 ota_tool 开始执行", f"{label} OTA")
             _, stdout, stderr = ssh.client.exec_command(cmd, timeout=None)
             for line in iter(stdout.readline, ""):
                 line = line.rstrip('\n\r')
@@ -492,12 +591,15 @@ class DeployExecutor:
             exit_code = stdout.channel.recv_exit_status()
             if exit_code == 0:
                 self.log(f"[{label} OTA] ✅ 升级成功 (exit code: 0)")
-                ssh.client.exec_command(f"rm -rf {ota_dir}/*")
+                self._remote_ota_trace(ssh, ota_dir, f"[{label}] 前台 ota_tool 成功 exit=0，清理 OTA 目录(保留轨迹)", f"{label} OTA")
+                ssh.client.exec_command(clean)
                 self.log(f"[{label} OTA] 设备即将重启...")
                 ssh.client.exec_command("reboot")
             else:
+                self._remote_ota_trace(ssh, ota_dir, f"[{label}] 前台 ota_tool 失败 exit={exit_code}", f"{label} OTA")
                 self.log(f"[{label} OTA] ❌ 升级失败 (exit code: {exit_code})")
         except Exception as e:
+            self._remote_ota_trace(ssh, ota_dir, f"[{label}] 前台 ota_tool 异常: {e}", f"{label} OTA")
             self.log(f"[{label} OTA] ❌ 执行异常: {e}")
 
 # ── 弹窗类：SN 输入与校验 ──────────────────────────────────────────────────────────

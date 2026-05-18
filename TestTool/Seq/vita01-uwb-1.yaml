@@ -11,6 +11,8 @@ metadata:
 variables:
   robot_ip: "192.168.126.2"
   robot_port: 3579
+  # x5 狗头主板（SSH 执行 bluetoothctl；私钥未在步骤中填写时使用「设置 → SSH」默认路径）
+  x5_ip: "192.168.127.10"
 
 steps:
 
@@ -149,7 +151,7 @@ steps:
     expect: null
     on_failure: fail
 
-  # Step 9: UWB 测试 (uwb=3%)
+  # Step 9: UWB 测试 (uwb=3%)。失败则仅多跑 step_9b 采蓝牙日志后结束本段工程步（on_failure=continue 仅为执行 9b）；总结果只认 uwb=3%，与蓝牙无关。
   - id: step_9
     name: UWBTest2
     type: engineer.test
@@ -162,9 +164,36 @@ steps:
     retries: 1
     condition: null
     expect: null
-    on_failure: fail
+    on_failure: continue
 
-  # Step 10: UWB 测试 (uwb=2%)
+  # Step 9b: x5 上 bluetoothctl show，仅写入日志（stdout/stderr）；Powered 状态只作提示，远端固定 exit 0，不参与整测 PASS/FAIL。
+  - id: step_9b_x5_bluetooth_powered
+    name: X5BluetoothctlPowered
+    type: utility.ssh_exec
+    params:
+      host: '${x5_ip}'
+      username: root
+      port: 22
+      command: >-
+        bash -lc "out=$(bluetoothctl show 2>&1); printf '%s\n' \"$out\";
+        if printf '%s' \"$out\" | grep -qE '^[[:space:]]*Powered:[[:space:]]+yes([[:space:]]|$)';
+        then echo '[BT][INFO] Powered: yes（仅记录，不参与判定）' >&2;
+        elif printf '%s' \"$out\" | grep -qE '^[[:space:]]*Powered:[[:space:]]+no([[:space:]]|$)';
+        then echo '[BT][WARN] Powered: no，蓝牙可能未上电（仅记录，不参与判定）' >&2;
+        else echo '[BT][WARN] 未解析到 Powered 行（仅记录，不参与判定）' >&2;
+        fi; exit 0"
+      strict_host_key: false
+      expect_zero_exit: true
+      connect_timeout: 25
+      exec_timeout: 45
+      keepalive_sec: 10
+    timeout: 60000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: continue
+
+  # Step 10: UWB 测试 (uwb=2%) — 仅 step_9 通过时执行（step_9 失败时已跑蓝牙诊断）
   - id: step_10
     name: UWBTest3
     type: engineer.test
@@ -175,11 +204,11 @@ steps:
       timeout: 30
     timeout: 35000
     retries: 1
-    condition: null
+    condition: '${step_9_passed}'
     expect: null
     on_failure: fail
 
-  # Step 13: stage2设置为1 (stage=1,2,1%)
+  # Step 13: stage2设置为1 (stage=1,2,1%) — 仅 step_9 通过时执行
   - id: step_13
     name: ConfirmFusionFlag
     type: engineer.test
@@ -191,11 +220,11 @@ steps:
       skip_log_response: true  # 跳过响应日志记录
     timeout: 35000
     retries: 1
-    condition: null
+    condition: '${step_9_passed}'
     expect: null
     on_failure: fail
 
-  # Step 11: 关机 (poweroff=1%)
+  # Step 11: 关机 (poweroff=1%) — 仅 step_9 通过时执行
   - id: step_11
     name: PowerOff
     type: engineer.test
@@ -206,7 +235,7 @@ steps:
       timeout: 30
     timeout: 35000
     retries: 1
-    condition: null
+    condition: '${step_9_passed}'
     expect: null
     on_failure: fail
 

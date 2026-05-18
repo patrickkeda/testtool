@@ -1,7 +1,7 @@
 version: '1.0'
 metadata:
   name: pvt-stress-ssh
-  description: 'PVT 压测：MES→扫码→Ping→SFTP 上传 v3 脚本至 /app→SSH 执行→校验 v3 落盘→拔 Hub→120min→上传'
+  description: 'PVT：…→接 Hub→SSH 停→确认进程停→SFTP→MES'
   author: 'TestTool'
   created_at: '2026-05-06T00:00:00.000000'
   product: Vita01
@@ -15,9 +15,12 @@ metadata:
 # 4) 检测返回：stdout/stderr 流式匹配 pass_on_stdout_regex（须晚于「cycle start」：脚本先打 cycle start 再打 locomotion，
 #    若仍用 cycle … start + disconnect_early，会在第一轮动作前断 SSH，压测实质未跑。
 #    现改为匹配「sleep … (after stand)」：在首次 stand 的 ros2 service call 完成之后才会打这行。
-# 5) 校验 v3 落盘：step_pvt_verify_script_on_robot（可选核对；与上传路径一致）
+# 5) 校验落盘：step_pvt_verify_script_on_robot 检查 ``pvt_remote_script_path``（与 SFTP 目标一致，勿写死文件名）
 # 6) 列远端目录：step_pvt_list_remote_app（cd /app && ls -la，stdout 写入测试日志）
-# 7) 拔 Hub 人工确认 → utility.delay 120min（hub_countdown_ms）→ MES 上传结果
+# 7) 拔 Hub 人工确认 → utility.delay（hub_countdown_ms，默认 120min；改小如 120000=120s 便于调试）→
+#    倒计时**开始瞬间**写入 ``pvt_hub_countdown_started_at``；「煲机异常」可随时点，「煲机无异常」须倒计时结束后再点（均继续流程）→
+#    写入 ``pvt_hub_burnin_outcome``（ok|abnormal）→ 接回 Hub 确认 → **SSH 停止**压测与 bag →
+#    **SSH 轮询确认进程已停** → SFTP 拉取 → MES 上传
 #
 # 【注意】pass_regex_disconnect_early=true 时：一旦匹配 pass_on_stdout_regex 即判本步通过并断开 SSH，
 # 远端 bash 内脚本常被终止，板上不会跑满整轮。若要求「脚本在板上跑满再进入 120min」，
@@ -28,6 +31,7 @@ metadata:
 # —— 压测脚本（默认：本机拷到远端 /app 再执行）——
 # 默认：invoke_remote_script=true + upload_local_file → 同一 SSH 内 SFTP 到 remote_script_path，
 # 再 mount→chmod→执行。将 pvt_upload_local_file 设为 '' 可跳过上传（要求板上已有该路径脚本）。
+# 远端文件名：改 ``pvt_remote_script_basename``（及必要时 ``pvt_remote_script_path``）即可，不必改校验步骤里的命令。
 # invoke_remote_background：远端 nohup ./ 脚本 + 本会话 tail -f 日志；拔 Hub 断 SSH 后压测仍在板上跑（见 pvt_nohup_log）。
 # 备选：pvt_invoke_remote_script=false → 本机脚本经 stdin（bash -s）执行，远端不落盘。
 # —— 换电脑后无法启动 / 步骤报错时请先核对 ——
@@ -42,10 +46,11 @@ variables:
   pvt_ssh_host: '192.168.126.2'
   pvt_ssh_user: 'root'
   pvt_invoke_remote_script: true
-  # 远端落盘路径（与 pvt_script_path 上传内容对应；板上常用 v3 文件名）
-  pvt_remote_script_path: '/app/pvt_stress_test_v3.sh'
   pvt_remote_workdir: '/app'
-  # 本机待上传脚本（可被配置 ssh.import_script_path 覆盖，见设置 → SSH 私钥下方）
+  # 远端 SFTP 目标文件名（须与 remote_script_path 的 basename 一致；仅改此处即可换版本脚本）
+  pvt_remote_script_basename: 'pvt_stress_test.sh'
+  pvt_remote_script_path: '${pvt_remote_workdir}/${pvt_remote_script_basename}'
+  # 本机待上传脚本（可被配置 ssh.import_script_path 覆盖，见设置 → SSH 私钥下方；覆盖时会同步更新 basename）
   pvt_script_path: 'client/vita_engineer_client/pvt_stress_test.sh'
   pvt_upload_local_file: '${pvt_script_path}'
   # 压测循环次数（默认 24；总轮数仍由远端脚本决定，此处仅传 --loops）
@@ -53,15 +58,20 @@ variables:
   pvt_script_args: '--duration 180 --loops ${pvt_stress_loops} --post-stop-sleep 5 --post-jump-sleep 15 --motor-sleep 5'
   # early 模式：约束多久内看到 pass_on_stdout_regex；若改 pass_regex_disconnect_early=false 再加大
   pvt_exec_timeout_sec: 7200
-  # nohup 日志（invoke_remote_background=true）；默认 /tmp/<脚本名>.testtool_nohup.log
-  pvt_nohup_log: '/tmp/pvt_stress_test_v3.testtool_nohup.log'
+  # nohup 日志（invoke_remote_background=true）；须与远端脚本 basename 一致（见 ssh_exec 默认命名）
+  pvt_nohup_log: '/tmp/${pvt_remote_script_basename}.testtool_nohup.log'
   pvt_invoke_remote_background: true
   # Hub 后老化倒计时 120 分钟（毫秒）
   hub_countdown_ms: 7200000
   # SSH 列目录步骤：远端路径（默认 /app）
   pvt_list_remote_dir: '/app'
+  # MCAP 等数据目录（与 pvt_stress_test_v4.sh 内 MCAP_RECORD_DIR 默认一致）
+  pvt_ota_remote_data_dir: '/ota/pvt_stress_test'
+  # 拉取到本机的父目录；空表示使用当前用户 Downloads（完整路径见进度条与测试日志）
+  pvt_ota_pull_local_parent: ''
 
 steps:
+  # MES 失败用 on_failure: fail：产线模式下由 Worker 失败直跳 mes.upload_result（FAIL）并停，不跑后续 PVT。
   - id: step_mes_0
     name: MESInit
     type: mes.heartbeat
@@ -70,7 +80,7 @@ steps:
     retries: 2
     condition: null
     expect: null
-    on_failure: continue
+    on_failure: fail
     at_config: null
     state_measurement_config: null
     manual_judgment_config: null
@@ -102,7 +112,7 @@ steps:
     retries: 1
     condition: null
     expect: null
-    on_failure: continue
+    on_failure: fail
     at_config: null
     state_measurement_config: null
     manual_judgment_config: null
@@ -165,15 +175,15 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 压测步内已 SFTP 到 pvt_remote_script_path；本步单独 SSH 校验文件存在且非空（确认 v3 已落盘）
+  # 压测步内已 SFTP 到 remote_script_path；本步校验同一路径存在且非空（路径来自 variables，非写死）
   - id: step_pvt_verify_script_on_robot
-    name: VerifyPvtV3ScriptOnRobot
+    name: VerifyPvtScriptOnRobot
     type: utility.ssh_exec
     params:
       host: '${pvt_ssh_host}'
       username: '${pvt_ssh_user}'
       port: 22
-      command: bash -lc "test -f ${pvt_remote_script_path} && test -s ${pvt_remote_script_path} && echo PVT_SCRIPT_VERIFY_OK"
+      command: bash -lc "test -f '${pvt_remote_script_path}' && test -s '${pvt_remote_script_path}' && echo PVT_SCRIPT_VERIFY_OK"
       strict_host_key: false
       expect_zero_exit: true
       connect_timeout: 30
@@ -235,10 +245,114 @@ steps:
     params:
       duration_ms: '${hub_countdown_ms}'
       title: 'Hub 老化倒计时'
-      message: '请保持 Hub 已拔除状态，倒计时结束后将上传 MES。\n剩余：{mmss}'
+      message: '请保持 Hub 已拔除状态。\n剩余：{mmss}\n「煲机异常」发现故障时可随时点击；「煲机无异常」须倒计时结束后再点（均会进入接 Hub 与拉取数据）。'
       show_countdown: true
       countdown_allow_interrupt: true
+      countdown_completion_buttons: true
+      countdown_ok_button_text: '煲机无异常'
+      countdown_abnormal_button_text: '煲机异常'
+      countdown_outcome_context_key: 'pvt_hub_burnin_outcome'
+      # 倒计时开始瞬间写入时间戳，供下一步拉取目录命名（与扫描 SN 组合）
+      save_countdown_started_at_context_key: 'pvt_hub_countdown_started_at'
     timeout: 7300000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_pvt_reconnect_pull_confirm
+    name: ReconnectHubAndPullOtaConfirm
+    type: utility.confirm
+    params:
+      title: '请接回 Hub 并拉取数据'
+      message: >-
+        煲机结果已记录（${pvt_hub_burnin_outcome}）。请将 Hub 线重新接好，确保本机能 SSH 连到 ${pvt_ssh_host}。
+        点击「确认」后将先通过 SSH 停止远端压测脚本（${pvt_remote_script_basename}）及 ros2 bag 录制，**并轮询确认进程已完全退出**，再从 ${pvt_ota_remote_data_dir} 拉取到本机。
+        保存位置：若未配置 pvt_ota_pull_local_parent，则为当前 Windows 用户的「下载」文件夹（Downloads）下子目录，名称为 SN_倒计时开始时间_煲机结果（ok 或 abnormal）；配置了 pvt_ota_pull_local_parent 则为该路径下同名子文件夹。拉取时会出现进度条并再次显示完整路径。
+        拉取成功后删除远端该目录并重建空目录。点「取消」将中止流程。
+      confirm_text: '确认'
+      cancel_text: '取消'
+      allow_cancel: true
+    timeout: 300000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 与板上 pvt_stress_test_v*.sh 一致：EXIT trap 会 stop_mcap；此处用 SSH 补一刀，避免 Hub 老化期间仍持续写 MCAP
+  - id: step_pvt_ssh_stop_remote_stress_and_recorder
+    name: SshStopPvtStressAndRos2Bag
+    type: utility.ssh_exec
+    params:
+      host: '${pvt_ssh_host}'
+      username: '${pvt_ssh_user}'
+      port: 22
+      # pgrep 字面量「ros2 bag record」会命中本 bash -lc（命令行含该串）；用 r1+r2 拼出 rosrec，使 /proc 里本 shell 的 argv 不含连续子串，pgrep 不再自匹配。PID 仍用 grep -vxF "$mypid" 双保险。
+      command: >-
+        bash -lc 'set +e; export TERM=dumb; mypid=$$; r1=ros2; r2='"'"' bag record'"'"'; rosrec="$r1$r2"; script='"'"'${pvt_remote_script_basename}'"'"'; pvt_dir='"'"'${pvt_ota_remote_data_dir}'"'"'; echo '"'"'[TestTool] stop PVT + mcap'"'"'; for pid in $(pgrep -f "$script" 2>/dev/null | grep -vxF "$mypid"); do kill -TERM "$pid" 2>/dev/null; done; sleep 6; for round in 1 2; do for pid in $(pgrep -af "$rosrec" 2>/dev/null | grep -F "$pvt_dir" | sed "s/ .*//" | grep -vxF "$mypid"); do [ -n "$pid" ] && kill -INT "$pid" 2>/dev/null; done; sleep 6; for pid in $(pgrep -af "$rosrec" 2>/dev/null | grep -F "$pvt_dir" | sed "s/ .*//" | grep -vxF "$mypid"); do [ -n "$pid" ] && kill -KILL "$pid" 2>/dev/null; done; sleep 4; done; for pid in $(pgrep -f "$script" 2>/dev/null | grep -vxF "$mypid"); do kill -KILL "$pid" 2>/dev/null; done; echo '"'"'[TestTool] stop done'"'"'; exit 0'
+      strict_host_key: false
+      expect_zero_exit: false
+      connect_timeout: 90
+      exec_timeout: 240
+      keepalive_sec: 10
+    timeout: 240000
+    retries: 1
+    retry_interval_ms: 3000
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 轮询直至压测脚本消失，且不再有输出目录在 pvt_ota_remote_data_dir 下的 ros2 bag（避免 BMS 等其它 bag 阻塞）
+  - id: step_pvt_ssh_verify_stress_and_recorder_stopped
+    name: SshVerifyPvtAndBagFullyStopped
+    type: utility.ssh_exec
+    params:
+      host: '${pvt_ssh_host}'
+      username: '${pvt_ssh_user}'
+      port: 22
+      # 轮询最多 90×2s≈3min；rosrec=r1+r2 避免 pgrep「ros2 bag record」命中本 bash -lc（见 stop 步注释）。mypid 从 pgrep 结果中剔除。
+      command: >-
+        bash -lc 'set +e; export TERM=dumb; mypid=$$; r1=ros2; r2='"'"' bag record'"'"'; rosrec="$r1$r2"; script='"'"'${pvt_remote_script_basename}'"'"'; pvt_dir='"'"'${pvt_ota_remote_data_dir}'"'"'; echo "[TestTool] PVT verify: INT/KILL bags under $pvt_dir..." >&2; for pid in $(pgrep -af "$rosrec" 2>/dev/null | grep -F "$pvt_dir" | sed "s/ .*//" | grep -vxF "$mypid"); do [ -n "$pid" ] && kill -INT "$pid" 2>/dev/null; done; sleep 8; for pid in $(pgrep -af "$rosrec" 2>/dev/null | grep -F "$pvt_dir" | sed "s/ .*//" | grep -vxF "$mypid"); do [ -n "$pid" ] && kill -KILL "$pid" 2>/dev/null; done; sleep 4; echo "[TestTool] PVT verify: polling up to 90x2s (stderr progress every 5 rounds)..." >&2; i=1; while [ "$i" -le 90 ]; do o=0; if pgrep -f "$script" 2>/dev/null | grep -vxF "$mypid" | grep -q .; then o=1; fi; if pgrep -af "$rosrec" 2>/dev/null | grep -F "$pvt_dir" | sed "s/ .*//" | grep -vxF "$mypid" | grep -q .; then o=1; fi; if [ "$i" -eq 1 ] || [ $((i % 5)) -eq 0 ]; then echo "[TestTool] PVT verify: round $i/90 o=$o (0=script+bag clear)" >&2; fi; if [ "$o" -eq 0 ]; then echo PVT_AND_BAG_STOPPED_OK; exit 0; fi; rem=$((i % 10)); if [ "$rem" -eq 0 ]; then for pid in $(pgrep -af "$rosrec" 2>/dev/null | grep -F "$pvt_dir" | sed "s/ .*//" | grep -vxF "$mypid"); do [ -n "$pid" ] && kill -KILL "$pid" 2>/dev/null; done; sleep 2; fi; i=$((i+1)); sleep 2; done; echo "VERIFY_STOP_TIMEOUT" >&2; echo "[TestTool] PVT verify: diag pgrep script (may include this ssh bash if basename in cmdline):" >&2; pgrep -af "$script" >&2 || true; echo "[TestTool] PVT verify: diag ros bag under $pvt_dir (rosrec; should not match this ssh bash):" >&2; pgrep -af "$rosrec" 2>/dev/null | grep -F "$pvt_dir" >&2 || true; exit 1'
+      strict_host_key: false
+      expect_zero_exit: true
+      connect_timeout: 90
+      exec_timeout: 320
+      keepalive_sec: 10
+    timeout: 420000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_pvt_sftp_pull_ota_delete_remote
+    name: SftpPullOtaPvtStressDeleteRemote
+    type: utility.ssh_sftp_pull_dir
+    params:
+      host: '${pvt_ssh_host}'
+      username: '${pvt_ssh_user}'
+      port: 22
+      remote_dir: '${pvt_ota_remote_data_dir}'
+      local_parent_dir: '${pvt_ota_pull_local_parent}'
+      local_dir_name: '${sn}_${pvt_hub_countdown_started_at}_${pvt_hub_burnin_outcome}'
+      delete_remote_after: true
+      strict_host_key: false
+      connect_timeout: 30
+      exec_timeout: 180
+      show_pull_progress: true
+      pull_progress_title: 'PVT 数据导出'
+    timeout: 3600000
     retries: 0
     condition: null
     expect: null
