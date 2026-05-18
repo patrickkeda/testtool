@@ -23,7 +23,8 @@ variables:
   pcan_channel: 'pcan-usb1'
   pcan_baudrate: 1000000
 
-  # 被测电机/动作参数
+  # 被测电机/动作参数（返修件 ID 可能为 3/6/9/12，由 search 步骤自动识别）
+  allowed_motor_ids: "3,6,9,12"
   motor_id: 3
   torque_log_dir: 'Result/dogleg'
   extend_torque: 0.3      # 伸腿扭矩上限（调低，动作更柔和）
@@ -169,12 +170,15 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤7: 搜索并连接 3 号电机
+  # 步骤7: 搜索电机并在 3/6/9/12 中自动识别（返修写入非 3 时无需改序列）
   - id: step_7
-    name: SearchMotor3
+    name: SearchMotorAuto
     type: pcan.search_motor
     params:
-      motor_id: ${motor_id}
+      auto_detect_motor_id: true
+      allowed_motor_ids: '${allowed_motor_ids}'
+      search_wait_ms: 800
+      probe_enable_if_not_found: true
     timeout: 10000
     retries: 2
     condition: null

@@ -16,11 +16,67 @@ PCAN (pcan-usb1) 相关测试步骤（复用 test/dogleg/tool.py 中的 CANCommu
 
 from ...base import BaseStep, StepResult
 from ...context import Context
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 import sys
 import os
+import time
 import importlib.util
+
+# 产线狗腿返修后常见电机 ID（非固定 3 时在此集合内自动识别）
+_DEFAULT_ALLOWED_MOTOR_IDS = (3, 6, 9, 12)
+
+
+def _parse_motor_id_list(raw: Any, default: Tuple[int, ...] = _DEFAULT_ALLOWED_MOTOR_IDS) -> List[int]:
+    """解析 ``3,6,9,12`` / ``[3,6,9,12]`` / 单数字。"""
+    if raw is None:
+        return list(default)
+    if isinstance(raw, (list, tuple)):
+        out: List[int] = []
+        for x in raw:
+            try:
+                out.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        return out or list(default)
+    s = str(raw).strip()
+    if not s:
+        return list(default)
+    if s.startswith("[") and s.endswith("]"):
+        s = s[1:-1]
+    parts = [p.strip() for p in s.replace(";", ",").split(",") if p.strip()]
+    out = []
+    for p in parts:
+        try:
+            out.append(int(p))
+        except ValueError:
+            continue
+    return out or list(default)
+
+
+def _resolve_motor_id_param(raw: Any, ctx: Context, default: int = 3) -> int:
+    if isinstance(raw, str) and raw.strip().startswith("${") and raw.strip().endswith("}"):
+        raw = ctx.get_data("motor_id", default)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _persist_detected_motor_id(ctx: Context, comm: Any, motor_id: int) -> None:
+    setattr(comm, "current_motor_id", motor_id)
+    ctx.set_state("pcan_motor_id", motor_id)
+    ctx.set_data("motor_id", motor_id)
+
+
+def _active_motor_id(ctx: Context, params: Dict[str, Any]) -> int:
+    """优先使用 search 步骤识别并写入的 ID，其次步骤参数 / 序列变量。"""
+    state_mid = ctx.get_state("pcan_motor_id")
+    if state_mid is not None:
+        return int(state_mid)
+    if params.get("motor_id") is not None:
+        return _resolve_motor_id_param(params.get("motor_id"), ctx, default=3)
+    return _resolve_motor_id_param(ctx.get_data("motor_id", 3), ctx, default=3)
 
 
 def _get_dogleg_dir() -> Path:
@@ -96,6 +152,51 @@ def _load_can_communicator(ctx: Context):
         return None
 
 
+def _safe_shutdown_pcan_comm(comm, warn=None) -> None:
+    """先停止 CAN 接收线程再 Uninitialize，避免与 receive_loop 并发访问 PCANBasic 导致进程偶发闪退。
+
+    dogleg ``tool.CANCommunicator`` 在 ``init_can`` 中会启动 ``receive_thread``；若仅调用
+    ``Uninitialize`` 而不停线程，接收循环仍可能卡在 ``Read``，与释放通道竞态，表现为间歇性崩溃。
+    """
+    if comm is None:
+        return
+    _w = warn or (lambda *_a, **_k: None)
+
+    try:
+        if hasattr(comm, "terminate"):
+            comm.terminate()
+            return
+    except Exception as e:  # pragma: no cover
+        _w(f"[PCAN] terminate 异常（将尝试降级清理）: {e}")
+
+    try:
+        try:
+            setattr(comm, "termination_requested", True)
+        except Exception:
+            pass
+        try:
+            comm.running = False
+        except Exception:
+            pass
+        rt = getattr(comm, "receive_thread", None)
+        if rt is not None and rt.is_alive():
+            try:
+                rt.join(timeout=2.0)
+            except Exception:
+                pass
+        if hasattr(comm, "pcan") and hasattr(comm, "channel"):
+            try:
+                comm.pcan.Uninitialize(comm.channel)
+            except Exception:
+                pass
+        try:
+            setattr(comm, "initialized", False)
+        except Exception:
+            pass
+    except Exception as e:  # pragma: no cover
+        _w(f"[PCAN] 降级清理异常: {e}")
+
+
 def _get_or_create_can_comm(ctx: Context):
     """
     从上下文获取或创建一个 CANCommunicator 实例。
@@ -132,22 +233,12 @@ class PcanConnectStep(BaseStep):
                 error_code="PCAN_ERR_IMPORT",
             )
 
-        # 如果已经初始化过，先尝试优雅关闭再重连，避免上一次失败残留导致本次 Initialize 失败
+        # 如果已经初始化过，先停接收线程再释放通道，避免与 receive_loop 竞态导致闪退
         try:
-            if getattr(comm, "initialized", False) and hasattr(comm, "pcan") and hasattr(comm, "channel"):
-                ctx.log_warning("[PCAN] 检测到上次连接可能未完全释放，先执行 Uninitialize 再重连")
-                try:
-                    comm.pcan.Uninitialize(comm.channel)
-                except Exception:
-                    # 忽略底层异常，继续尝试重新初始化
-                    pass
-                # 标记为未初始化，方便后续逻辑判断
-                try:
-                    setattr(comm, "initialized", False)
-                except Exception:
-                    pass
+            if getattr(comm, "initialized", False):
+                ctx.log_warning("[PCAN] 检测到上次连接可能未完全释放，先安全终止再重连")
+                _safe_shutdown_pcan_comm(comm, ctx.log_warning)
         except Exception:
-            # 任何清理异常都不影响后续重连尝试
             pass
 
         try:
@@ -179,11 +270,13 @@ class PcanConnectStep(BaseStep):
 
 
 class PcanSearchMotorStep(BaseStep):
-    """搜索并“连接”指定 ID 的电机
+    """搜索电机并在允许 ID 集合内自动识别（返修件可能为 3/6/9/12 等非默认 3）。
 
-    说明：
-    - 这里提供一个简单占位实现，仅验证总线可用并记录 motor_id
-    - 实际搜索/握手逻辑可参考现有 tool.py 中的实现，在此处补充
+    params:
+    - auto_detect_motor_id: 是否根据总线搜索结果自动选用 ID（默认 true）
+    - allowed_motor_ids: 允许的 ID，如 ``3,6,9,12`` 或列表（默认 3,6,9,12）
+    - search_wait_ms: 广播搜索后等待响应毫秒数（默认 800）
+    - probe_enable_if_not_found: 搜索无结果时，在允许 ID 上逐个尝试使能（默认 true）
     """
 
     def run_once(self, ctx: Context, params: Dict[str, Any]) -> StepResult:
@@ -196,33 +289,107 @@ class PcanSearchMotorStep(BaseStep):
                 error_code="PCAN_ERR_NOT_CONNECTED",
             )
 
-        # motor_id 支持直接数字或 "${motor_id}" 形式，从上下文 variables 解析
-        raw_motor_id = params.get("motor_id", ctx.get_data("motor_id", 3))
-        if isinstance(raw_motor_id, str):
-            # 如果是占位符，优先从上下文取数字
-            if raw_motor_id.strip().startswith("${") and raw_motor_id.strip().endswith("}"):
-                raw_motor_id = ctx.get_data("motor_id", 3)
-        try:
-            motor_id = int(raw_motor_id)
-        except Exception:
-            motor_id = 3
-            ctx.log_warning(f"[PCAN] motor_id 参数解析失败，使用默认值 3，原始值: {raw_motor_id!r}")
-        # 无 UI 环境：直接设置 current_motor_id，并调用 search_motors 进行一次广播
-        try:
-            setattr(comm, "current_motor_id", motor_id)
-            if hasattr(comm, "search_motors"):
-                ctx.log_info("[PCAN] 调用 CANCommunicator.search_motors() 搜索电机")
-                comm.search_motors()
-        except Exception as e:  # pragma: no cover
-            ctx.log_warning(f"[PCAN] 搜索电机时出现异常（忽略，仅记录）: {e}")
+        allowed = _parse_motor_id_list(
+            params.get("allowed_motor_ids", ctx.get_data("allowed_motor_ids")),
+        )
+        auto_detect = self.get_param_bool(params, "auto_detect_motor_id", True)
+        search_wait_ms = max(100, self.get_param_int(params, "search_wait_ms", 800))
+        probe_enable = self.get_param_bool(params, "probe_enable_if_not_found", True)
 
-        ctx.set_state("pcan_motor_id", motor_id)
-        ctx.log_info(f"[PCAN] 已记录 motor_id={motor_id}")
+        ctx.log_info(
+            f"[PCAN] 电机 ID 策略: auto_detect={auto_detect}, allowed={allowed}"
+        )
+
+        discovered_ids: List[int] = []
+        if hasattr(comm, "search_motors"):
+            try:
+                if hasattr(comm, "discovered_motors"):
+                    comm.discovered_motors.clear()
+            except Exception:
+                pass
+            try:
+                ctx.log_info("[PCAN] 调用 CANCommunicator.search_motors() 广播搜索…")
+                comm.search_motors()
+                time.sleep(search_wait_ms / 1000.0)
+                discovered_ids = sorted(
+                    {int(mid) for mid, _uid in getattr(comm, "discovered_motors", [])}
+                )
+                if discovered_ids:
+                    ctx.log_info(f"[PCAN] 总线发现电机 ID: {discovered_ids}")
+            except Exception as e:  # pragma: no cover
+                ctx.log_warning(f"[PCAN] 搜索电机异常: {e}")
+
+        motor_id: Optional[int] = None
+        detect_source = ""
+
+        if auto_detect:
+            allowed_set = set(allowed)
+            matched = [mid for mid in discovered_ids if mid in allowed_set]
+            if len(matched) == 1:
+                motor_id = matched[0]
+                detect_source = "bus_search"
+            elif len(matched) > 1:
+                return StepResult(
+                    passed=False,
+                    message="总线上发现多个允许的电机 ID，请只接一只电机或缩小 allowed_motor_ids",
+                    error=f"matched={matched}, discovered={discovered_ids}",
+                    error_code="PCAN_ERR_MULTIPLE_MOTOR_ID",
+                )
+            elif discovered_ids and not matched:
+                return StepResult(
+                    passed=False,
+                    message="发现电机但 ID 不在允许列表内",
+                    error=(
+                        f"discovered={discovered_ids}, allowed={allowed}; "
+                        "请确认返修写入的 ID 或更新 allowed_motor_ids"
+                    ),
+                    error_code="PCAN_ERR_MOTOR_ID_NOT_ALLOWED",
+                )
+
+        if motor_id is None and probe_enable and auto_detect and hasattr(comm, "enable_motor"):
+            ctx.log_info(
+                f"[PCAN] 搜索未命中允许 ID，逐个尝试使能: {allowed}"
+            )
+            for candidate in allowed:
+                setattr(comm, "current_motor_id", candidate)
+                try:
+                    ok, err = comm.enable_motor(mode=1)
+                except Exception as e:  # noqa: BLE001
+                    ok, err = False, str(e)
+                if ok:
+                    motor_id = candidate
+                    detect_source = "probe_enable"
+                    ctx.log_info(f"[PCAN] 使能探测成功: motor_id={candidate}")
+                    break
+                ctx.log_info(f"[PCAN] ID={candidate} 使能未成功: {err}")
+
+        if motor_id is None:
+            ctx.log_error(
+                f"[PCAN] 未在允许列表 {allowed} 内识别到电机 "
+                f"(discovered={discovered_ids or '无'})"
+            )
+            return StepResult(
+                passed=False,
+                message="未识别到电机 ID，请检查接线、供电及返修写入的 ID",
+                error=(
+                    f"allowed={allowed}, discovered={discovered_ids or []}; "
+                    "已尝试总线搜索与使能探测"
+                ),
+                error_code="PCAN_ERR_MOTOR_ID_NOT_FOUND",
+            )
+
+        _persist_detected_motor_id(ctx, comm, motor_id)
+        ctx.log_info(f"[PCAN] 本次使用 motor_id={motor_id}（来源: {detect_source}）")
 
         return StepResult(
             passed=True,
-            message=f"记录电机 ID 成功（占位实现）: motor_id={motor_id}",
-            data={"motor_id": motor_id},
+            message=f"电机 ID 已确定: {motor_id}（{detect_source}）",
+            data={
+                "motor_id": motor_id,
+                "detect_source": detect_source,
+                "discovered_ids": discovered_ids,
+                "allowed_motor_ids": allowed,
+            },
         )
 
 
@@ -242,17 +409,7 @@ class PcanEnableMotorStep(BaseStep):
                 error_code="PCAN_ERR_NOT_CONNECTED",
             )
 
-        raw_motor_id = params.get(
-            "motor_id", ctx.get_state("pcan_motor_id", default=ctx.get_data("motor_id", 3))
-        )
-        if isinstance(raw_motor_id, str):
-            if raw_motor_id.strip().startswith("${") and raw_motor_id.strip().endswith("}"):
-                raw_motor_id = ctx.get_data("motor_id", 3)
-        try:
-            motor_id = int(raw_motor_id)
-        except Exception:
-            motor_id = 3
-            ctx.log_warning(f"[PCAN] motor_id 参数解析失败，使用默认值 3，原始值: {raw_motor_id!r}")
+        motor_id = _active_motor_id(ctx, params)
         setattr(comm, "current_motor_id", motor_id)
 
         if not hasattr(comm, "enable_motor"):
@@ -326,17 +483,7 @@ class PcanMoveWithTorqueLogStep(BaseStep):
             )
 
         action = str(params.get("action", "extend")).lower()
-        raw_motor_id = params.get(
-            "motor_id", ctx.get_state("pcan_motor_id", default=ctx.get_data("motor_id", 3))
-        )
-        if isinstance(raw_motor_id, str):
-            if raw_motor_id.strip().startswith("${") and raw_motor_id.strip().endswith("}"):
-                raw_motor_id = ctx.get_data("motor_id", 3)
-        try:
-            motor_id = int(raw_motor_id)
-        except Exception:
-            motor_id = 3
-            ctx.log_warning(f"[PCAN] motor_id 参数解析失败，使用默认值 3，原始值: {raw_motor_id!r}")
+        motor_id = _active_motor_id(ctx, params)
         setattr(comm, "current_motor_id", motor_id)
         sn = params.get("sn", ctx.get_sn() or "UNKNOWN_SN")
         log_dir = params.get("log_dir", "Result/dogleg")
@@ -488,11 +635,7 @@ class PcanDisconnectStep(BaseStep):
             )
 
         try:
-            if hasattr(comm, "pcan") and hasattr(comm, "channel"):
-                try:
-                    comm.pcan.Uninitialize(comm.channel)
-                except Exception:
-                    pass
+            _safe_shutdown_pcan_comm(comm, ctx.log_warning)
         except Exception as e:  # pragma: no cover
             ctx.log_warning(f"[PCAN] 断开 PCAN 连接时出现异常: {e}")
 
