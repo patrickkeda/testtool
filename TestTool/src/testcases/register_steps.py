@@ -47,6 +47,7 @@ from .steps.cases.pcan import (
 )
 from .steps.cases.create_device_json import CreateDeviceJsonStep
 from .steps.cases.compare_version import CompareVersionStep
+from .steps.cases.compare_efuse_sn import CompareEfuseSnStep
 from .steps.cases.mes_steps import MESHeartbeatStep, MESGetWorkOrderStep, MESUploadResultStep
 from .steps.cases.zebra_printer import ZebraPrintStep, ZebraImagePrintStep
 from .steps.cases.ssh_exec import SshExecStep
@@ -304,6 +305,12 @@ def register_all_steps():
         step_type="case.compare_version",
         step_class=CompareVersionStep,
         aliases=["compare_version", "version_compare", "check_version"]
+    )
+
+    register(
+        step_type="case.compare_efuse_sn",
+        step_class=CompareEfuseSnStep,
+        aliases=["compare_efuse_sn", "efuse_sn_compare", "check_efuse_sn"],
     )
 
     register(

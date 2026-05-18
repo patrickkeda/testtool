@@ -531,9 +531,9 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 17: Efuse 写入 SN
+  # Step 18: Efuse 写入 SN（efuse=1 为写入序列号）
   - id: step_18
-    name: EfuseSN
+    name: WriteEfuseSN
     type: engineer.test
     params:
       command: 'efuse=1,sn,${sn}%'
@@ -601,9 +601,9 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 22: Efuse 写入 SN
+  # Step 22: Efuse 读取 SN（efuse=0 为获取序列号）
   - id: step_22
-    name: EfuseSN
+    name: ReadEfuseSN
     type: engineer.test
     params:
       command: 'efuse=0,sn%'
@@ -612,6 +612,21 @@ steps:
       timeout: 30
     timeout: 35000
     retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 22.1: 校验 EFUSE 读回的 SN 与扫描 SN 一致
+  - id: step_22.1
+    name: CompareEfuseSN
+    type: case.compare_efuse_sn
+    params:
+      efuse_step_id: step_22
+    timeout: 5000
+    retries: 0
     condition: null
     expect: null
     on_failure: fail
@@ -719,6 +734,24 @@ steps:
     condition: null
     expect: null
     on_failure: fail
+
+  # 下电前设置语音音量（tts=3% 默认 60；指定音量示例 tts=3,volume=50%）
+  - id: step_25.5
+    name: SetTtsVolume60
+    type: engineer.test
+    params:
+      command: 'tts=3%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
 
   # Step 26: 下电
   - id: step_26
