@@ -16,7 +16,10 @@ from ..utility.version_payload import normalize_version_payload
 
 
 class CompareVersionStep(BaseStep):
-    """Compare the version payload from a previous step with configured versions."""
+    """Compare the version payload from a previous step with configured versions.
+
+    仅比对 versions 下的 S100/X5/MOTOR 等；config.device_json 出厂版本不参与本步骤。
+    """
 
     DUAL_KEYS = ("S100", "X5")
     SINGLE_KEYS = ("MOTOR", "SERVO", "UWB", "LIDAR", "BMS")

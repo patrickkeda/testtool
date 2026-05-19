@@ -215,6 +215,10 @@ versions:
     sw_version: WLR-722Z-Z-TYV1.3
   BMS:
     sw_version: 1.3.1
+# 仅用于 case.create_device_json，不参与 case.compare_version
+device_json:
+  factory_download_version: V1.1.0-5~20260508152452
+  factory_install_version: V1.1.0-5~20260508152452
 test_sequence:
   file: Seq/ft1.yaml
   last_used: D:/testtools/TestTool-v0.4/TestTool/Seq/pvt_stress_ssh.yaml

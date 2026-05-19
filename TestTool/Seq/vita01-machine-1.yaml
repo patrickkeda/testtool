@@ -156,7 +156,7 @@ steps:
   # Step 7: 创建 device.json 文件
   # 从前面步骤的结果中提取数据并创建 JSON 文件
   # 文件路径: TestTool\Result\upload\${sn}\device.json
-  # factoryDownloadVersion/factoryInstallVersion: V1.0.0~20260429022512
+  # factoryDownloadVersion/factoryInstallVersion: 见 config.yaml device_json
   - id: step_7
     name: CreateDeviceJson
     type: case.create_device_json

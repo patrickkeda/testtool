@@ -249,13 +249,18 @@ class VersionConfigDialog(QDialog):
         self._config_service = config_service
         self._single_edits: dict[str, dict[str, QLineEdit]] = {}
         self._dual_edits: dict[str, dict[str, QLineEdit]] = {}
+        self._device_json_edits: dict[str, QLineEdit] = {}
 
         self.setWindowTitle("版本配置")
         self.setModal(True)
-        self.resize(520, 520)
+        self.resize(520, 600)
 
         layout = QVBoxLayout(self)
-        hint = QLabel("配置项按最终 version.txt 结构组织。S100/X5 配置 app_version 和 sys_version，其它设备配置 sw_version。", self)
+        hint = QLabel(
+            "S100/X5、MOTOR 等用于 version=0 结果比对；下方 device.json 区块仅写入上传用的 "
+            "factoryDownloadVersion / factoryInstallVersion，不参与版本校验。",
+            self,
+        )
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
@@ -295,6 +300,20 @@ class VersionConfigDialog(QDialog):
             form.addRow("软件版本:", sw_edit)
             layout.addWidget(group)
 
+        device_json_group = QGroupBox("device.json（不参与版本比对）", self)
+        device_json_form = QFormLayout(device_json_group)
+        factory_dl_edit = QLineEdit(self)
+        factory_dl_edit.setPlaceholderText("factoryDownloadVersion，如 V1.1.0-5~20260508152452")
+        factory_in_edit = QLineEdit(self)
+        factory_in_edit.setPlaceholderText("factoryInstallVersion，如 V1.1.0-5~20260508152452")
+        self._device_json_edits = {
+            "factory_download_version": factory_dl_edit,
+            "factory_install_version": factory_in_edit,
+        }
+        device_json_form.addRow("出厂下载版本:", factory_dl_edit)
+        device_json_form.addRow("出厂安装版本:", factory_in_edit)
+        layout.addWidget(device_json_group)
+
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
             self,
@@ -327,6 +346,15 @@ class VersionConfigDialog(QDialog):
                 if version_item is None:
                     continue
                 edits["sw_version"].setText(str(getattr(version_item, "sw_version", "") or ""))
+
+            device_json_item = getattr(config, "device_json", None)
+            if device_json_item is not None:
+                self._device_json_edits["factory_download_version"].setText(
+                    str(getattr(device_json_item, "factory_download_version", "") or "")
+                )
+                self._device_json_edits["factory_install_version"].setText(
+                    str(getattr(device_json_item, "factory_install_version", "") or "")
+                )
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "警告", f"加载版本配置失败: {exc}")
 
@@ -426,6 +454,16 @@ class VersionConfigDialog(QDialog):
                 if version_item is None:
                     raise RuntimeError(f"{key} 版本配置不存在")
                 version_item.sw_version = edits["sw_version"].text().strip()
+
+            device_json_item = getattr(config, "device_json", None)
+            if device_json_item is None:
+                raise RuntimeError("device_json 配置不存在")
+            device_json_item.factory_download_version = (
+                self._device_json_edits["factory_download_version"].text().strip()
+            )
+            device_json_item.factory_install_version = (
+                self._device_json_edits["factory_install_version"].text().strip()
+            )
 
             self._config_service.save(config)
             QMessageBox.information(self, "保存成功", "版本配置已保存")

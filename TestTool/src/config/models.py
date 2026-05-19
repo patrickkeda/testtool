@@ -200,6 +200,19 @@ class ProductSingleVersionConfig(BaseModel):
     sw_version: str = Field("", description="软件版本号")
 
 
+class DeviceJsonVersionConfig(BaseModel):
+    """device.json 中 factoryDownloadVersion / factoryInstallVersion。"""
+
+    factory_download_version: str = Field(
+        "",
+        description="device.json factoryDownloadVersion",
+    )
+    factory_install_version: str = Field(
+        "",
+        description="device.json factoryInstallVersion",
+    )
+
+
 class VersionConfig(BaseModel):
     S100: ProductDualVersionConfig = Field(default_factory=ProductDualVersionConfig)
     X5: ProductDualVersionConfig = Field(default_factory=ProductDualVersionConfig)
@@ -273,6 +286,10 @@ class RootConfig(BaseModel):
     mes: MesConfig = Field(default_factory=MesConfig)
     printer: PrinterConfig = Field(default_factory=PrinterConfig)
     versions: VersionConfig = Field(default_factory=VersionConfig)
+    device_json: DeviceJsonVersionConfig = Field(
+        default_factory=DeviceJsonVersionConfig,
+        description="仅用于生成 device.json，不参与 version=0 版本比对",
+    )
     test_sequence: TestSequenceFileRef = Field(default_factory=TestSequenceFileRef)
     selfcheck: SelfCheckConfig = Field(default_factory=SelfCheckConfig)
 
