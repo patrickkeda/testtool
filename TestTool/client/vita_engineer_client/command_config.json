@@ -150,7 +150,7 @@
     },
     "tts": {
       "description": "TTS语音播放",
-      "parameter_count": 3,
+      "parameter_count": 4,
       "parameters": [
         {
           "name": "op",
@@ -794,6 +794,37 @@
       "operation_mapping": {
         "0": "检测收音数据是否为全零",
         "1": "音频回环测试（喇叭播放1kHz正弦波，FFT分析参考电路和4Mic是否正常）"
+      }
+    },
+    "copy_efuse_map": {
+      "description": "拷贝 efuse_map.bin.enc 到 S100",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "操作类型",
+          "required": true,
+          "valid_values": ["0"]
+        }
+      ],
+      "operation_mapping": {
+        "0": "上传当前 provision 目录下 efuse_map.bin.enc 到 S100:/userdata/efuse_map.bin.enc"
+      }
+    },
+    "provision_step": {
+      "description": "执行 provisioning 步骤",
+      "parameter_count": 1,
+      "parameters": [
+        {
+          "name": "op",
+          "description": "步骤类型",
+          "required": true,
+          "valid_values": ["1", "2"]
+        }
+      ],
+      "operation_mapping": {
+        "1": "执行 provision step1（生命周期查询、烧录 efuse map、等待后重启）",
+        "2": "执行 provision step2（vspi/provision imgs/finalize/lifecycle）"
       }
     },
     "motor_ota": {

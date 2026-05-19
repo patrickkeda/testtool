@@ -23,20 +23,7 @@ variables:
   plc_unit_id: 1
 
 steps:
-
-  # Step MES-0: MES初始化（MesInit）
-  - id: step_mes_0
-    name: MESInit
-    type: mes.heartbeat
-    params: {}
-    timeout: 8000
-    retries: 2
-    condition: null
-    expect: null
-    on_failure: continue
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
+  # Step 1: 扫描 SN
   - id: step_1
     name: ScanSN
     type: scan.sn
@@ -51,22 +38,6 @@ steps:
     manual_judgment_config: null
 
   # Step 2: 治具触摸气缸控制 - 显示交互操作提示
-
-  # Step MES-1: MesStart（按SN判站/获取工单）
-  - id: step_mes_1
-    name: MesStartCheckStation
-    type: mes.get_work_order
-    params:
-      sn: '${sn}'
-      expected_station: '${mes.effective_station}'
-    timeout: 15000
-    retries: 1
-    condition: null
-    expect: null
-    on_failure: continue
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
   - id: step_2
     name: FixtureTouchControl
     type: utility.confirm
@@ -127,8 +98,8 @@ steps:
     name: DelayAfterPowerOn
     type: utility.delay
     params:
-      duration_ms: 90000
-    timeout: 95000
+      duration_ms: 120000
+    timeout: 125000
     retries: 0
     condition: null
     expect: null
@@ -663,12 +634,30 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 29: 狗背抚摸测试 (tactile=0%)
+  # # Step 29: 狗背抚摸测试 (tactile=0%)
+  # - id: step_29
+  #   name: TactileTest
+  #   type: engineer.test
+  #   params:
+  #     command: 'tactile=0,0%'
+  #     robot_ip: '${robot_ip}'
+  #     port: ${robot_port}
+  #     timeout: 30
+  #   timeout: 35000
+  #   retries: 1
+  #   condition: null
+  #   expect: null
+  #   on_failure: fail
+  #   at_config: null
+  #   state_measurement_config: null
+  #   manual_judgment_config: null
+
+  # Step 29: copy efuse map 
   - id: step_29
-    name: TactileTest
+    name: CopyEfuseMap
     type: engineer.test
     params:
-      command: 'tactile=0,0%'
+      command: 'copy_efuse_map=0%'
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
@@ -681,6 +670,90 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
+  # Step 29: provision step 1 
+  - id: step_29
+    name: provision_step1
+    type: engineer.test
+    params:
+      command: 'provision_step=1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 5: 延时 100 秒
+  - id: step_5
+    name: DelayAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 50000
+    timeout: 50000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 29: provision step 2 
+  - id: step_29
+    name: provision_step2
+    type: engineer.test
+    params:
+      command: 'provision_step=2%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 5: 延时 100 秒
+  - id: step_5
+    name: DelayAfterPowerOn
+    type: utility.delay
+    params:
+      duration_ms: 110000
+    timeout: 115000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+      # Step 29: 进工厂模式 (enfac=1,1%)
+  - id: step_29
+    name: EnterFactoryMode
+    type: engineer.test
+    params:
+      command: 'enfac=1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+    
   # Step 31: 写入 efuseSN (efuse=1,s100,${sn}%)
   - id: step_31
     name: WriteEfuseSN
@@ -750,24 +823,6 @@ steps:
     manual_judgment_config: null
 
 
-
-  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL）
-  - id: step_mes_2
-    name: MesEnd2UploadResult
-    type: mes.upload_result
-    params:
-      prompt_overall_result: false
-      overall_result: '${context.result}'
-      error_message: '${context.error_message}'
-      use_mes_end: false
-    timeout: 15000
-    retries: 1
-    condition: null
-    expect: null
-    on_failure: continue
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
 timeout: null
 retries: 0
 on_failure: stop
