@@ -109,7 +109,7 @@ class PortWorker(QObject):
     def set_test_mode(self, mode: str) -> None:
         """设置测试模式：'production' 或 'debug'。
 
-        debug：MES 步骤（``mes.*``）不连服务器、不上报；以阻塞确认框替代，须点确认后才进入下一步。
+        debug：MES 步骤（``mes.*``）默认关闭，不连服务器、不上报、不弹窗，自动判通过并继续。
         production：正常执行 MES；步骤失败时可 ``_run_mes_end_after_failure`` 上报 FAIL。
         """
         with self._lock:
@@ -191,7 +191,13 @@ class PortWorker(QObject):
         except Exception as e:  # noqa: BLE001
             self._logger.warning(f"注入序列变量失败: {e}")
 
-        # 配置「SSH → 远程上传脚本」非空时，覆盖序列变量 pvt_script_path（PVT 等序列）
+        with self._lock:
+            _debug_mode = self._test_mode == "debug"
+        if _debug_mode and self.context:
+            self.context.set_data("mes_enabled", False)
+            self._logger.info("调试模式：MES 默认关闭（mes_enabled=False）")
+
+        # 配置「测试站 → 煲机脚本配置」(ssh.import_script_path) 非空时，覆盖序列变量 pvt_script_path
         try:
             _imp = self.context.get_data("ssh_import_script_path", "")
             if isinstance(_imp, str) and _imp.strip():
@@ -290,118 +296,36 @@ class PortWorker(QObject):
             self.sig_step.emit(step_config.id, "Running")
             
             try:
-                # 调试模式：MES 步骤不连服务器、不上报；用阻塞确认框卡住，取消则失败并停，确认后才进入下一步
+                # 调试模式：MES 默认关闭，自动跳过 mes.*，不弹窗、不连服务器
                 _inner_type = str(getattr(step_config, "type", "") or "")
                 with self._lock:
                     _dbg_mes_gate = self._test_mode == "debug"
                 if _dbg_mes_gate and _inner_type.startswith("mes."):
                     self._logger.info(
-                        "调试模式：MES 步骤 %s（%s）不调用 MES，显示门禁确认",
+                        "调试模式：MES 步骤 %s（%s）已自动跳过（MES 关闭）",
                         step_config.id,
                         step_config.name,
                     )
-                    gate = create_step(
-                        "utility.confirm",
-                        step_config.id,
-                        step_config.name,
-                        timeout=600,
-                        retries=0,
-                        on_failure="fail",
-                        retry_interval_ms=1000,
+                    skip_res = StepResult(
+                        passed=True,
+                        message="调试模式：MES 已关闭，本步自动跳过",
+                        data={"mes_skipped": True, "debug_mode": True},
                     )
-                    if not gate:
-                        self._logger.error("调试 MES 门禁：无法创建 utility.confirm 步骤")
-                        self.sig_step.emit(step_config.id, "Fail")
-                        fail_res = StepResult(
-                            passed=False,
-                            message="无法创建调试 MES 门禁确认框",
-                            error="utility.confirm",
-                        )
-                        try:
-                            if hasattr(self.context, "set_result"):
-                                self.context.set_result(step_config.id, fail_res)
-                            else:
-                                self.context.set_data(f"{step_config.id}_result", fail_res)
-                                self.context.set_data(step_config.id, fail_res)
-                            self.context.set_data(f"{step_config.id}_passed", False)
-                        except Exception as persist_ex:  # noqa: BLE001
-                            self._logger.warning("写入步骤失败结果到上下文失败: %s", persist_ex)
-                        self.sig_step_result.emit(step_config.id, fail_res)
-                        mes_uploaded = self._run_mes_end_after_failure(
-                            steps=steps,
-                            failed_step_id=step_config.id,
-                            failed_step_name=step_config.name,
-                            failed_result=fail_res,
-                        )
-                        if mes_uploaded:
-                            self._logger.info("已执行 MesEnd 失败上报，停止后续步骤")
-                        else:
-                            with self._lock:
-                                _tm = self._test_mode
-                            if _tm == "debug":
-                                self._logger.info("调试模式：不上报 MES，已停止后续步骤")
-                            else:
-                                self._logger.info(
-                                    "产线：已停止后续步骤（失败直跳 MesEnd 未执行、无 mes.upload_result 或为单步模式）"
-                                )
-                        self._cleanup_connections(abnormal_exit=True)
-                        break
-                    gparams = {
-                        "title": "调试模式 · MES 门禁",
-                        "message": (
-                            f"步骤「{step_config.name}」（{step_config.id}，类型 {step_config.type}）为 MES 步骤。\n\n"
-                            "调试模式下不会连接 MES、不上报任何数据。\n"
-                            "点「确认」跳过本步并继续后续流程；点「取消」中止本轮测试。"
-                        ),
-                        "confirm_text": "确认（不调 MES）",
-                        "cancel_text": "取消",
-                        "allow_cancel": True,
-                    }
-                    result = gate.run(self.context, gparams)
                     try:
                         if hasattr(self.context, "set_result"):
-                            self.context.set_result(step_config.id, result)
+                            self.context.set_result(step_config.id, skip_res)
                         else:
-                            self.context.set_data(f"{step_config.id}_result", result)
-                            self.context.set_data(step_config.id, result)
-                        self.context.set_data(f"{step_config.id}_passed", bool(result.passed))
+                            self.context.set_data(f"{step_config.id}_result", skip_res)
+                            self.context.set_data(step_config.id, skip_res)
+                        self.context.set_data(f"{step_config.id}_passed", True)
                     except Exception as persist_ex:  # noqa: BLE001
-                        self._logger.warning("写入步骤结果到上下文失败: %s", persist_ex)
-                    self.sig_step_result.emit(step_config.id, result)
+                        self._logger.warning("写入 MES 跳过结果到上下文失败: %s", persist_ex)
+                    self.sig_step_result.emit(step_config.id, skip_res)
                     self.sig_progress.emit(int(idx * 100 / n))
-                    if result.passed:
-                        self._logger.info(
-                            "调试模式：MES 门禁已确认，步骤 %s — 继续",
-                            step_config.id,
-                        )
-                        self.sig_step.emit(step_config.id, "Pass")
-                        if run_single:
-                            break
-                        continue
-                    self._logger.warning(
-                        "调试模式：MES 门禁未通过（取消或失败），步骤 %s",
-                        step_config.id,
-                    )
-                    self.sig_step.emit(step_config.id, "Fail")
-                    mes_uploaded = self._run_mes_end_after_failure(
-                        steps=steps,
-                        failed_step_id=step_config.id,
-                        failed_step_name=step_config.name,
-                        failed_result=result,
-                    )
-                    if mes_uploaded:
-                        self._logger.info("已执行 MesEnd 失败上报，停止后续步骤")
-                    else:
-                        with self._lock:
-                            _tm = self._test_mode
-                        if _tm == "debug":
-                            self._logger.info("调试模式：不上报 MES，已停止后续步骤")
-                        else:
-                            self._logger.info(
-                                "产线：已停止后续步骤（失败直跳 MesEnd 未执行、无 mes.upload_result 或为单步模式）"
-                            )
-                    self._cleanup_connections(abnormal_exit=True)
-                    break
+                    self.sig_step.emit(step_config.id, "Pass")
+                    if run_single:
+                        break
+                    continue
 
                 # 创建步骤实例
                 _st_timeout = getattr(step_config, "timeout", None)

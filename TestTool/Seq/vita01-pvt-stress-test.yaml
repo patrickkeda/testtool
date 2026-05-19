@@ -13,7 +13,7 @@ metadata:
 # - 推荐：local_script_file 指向本机 .sh（可用相对 TestTool 根目录，如 client/vita_engineer_client/...），
 #   经 SSH stdin 传给远端 bash -s，不必先拷贝到 S100（环境与 ros2/env 仍在远端）。
 # - 远端仍需：默认 /app/script/env.sh、DAG、bms_test、locomotion 等（与脚本一致）。
-# - 私钥：应用配置「SSH」页或 private_key_file / private_key_env。
+# - 私钥：「配置 → 测试站 → 私钥配置」或步骤 private_key_file / private_key_env。
 variables:
   pvt_ssh_host: "192.168.126.2"
   pvt_ssh_user: "root"

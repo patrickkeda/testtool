@@ -11,7 +11,7 @@ metadata:
 variables:
   robot_ip: "192.168.126.2"
   robot_port: 3579
-  # x5 狗头主板（SSH 执行 bluetoothctl；私钥未在步骤中填写时使用「设置 → SSH」默认路径）
+  # x5 狗头主板（SSH 执行 bluetoothctl；私钥未在步骤中填写时使用「配置 → 测试站 → 私钥配置」）
   x5_ip: "192.168.127.10"
 
 steps:

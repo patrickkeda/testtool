@@ -183,7 +183,7 @@ class RunPythonScriptStep(BaseStep):
                     passed=False,
                     message="参数仍含未展开的占位符",
                     error=(
-                        f"args[{i}]={a!r}。请配置：应用「SSH」页 default 私钥、"
+                        f"args[{i}]={a!r}。请配置：「配置 → 测试站 → 私钥配置」默认私钥、"
                         "或本步骤 params.private_key_file 指向私钥文件。"
                     ),
                     error_code="RUN_PY_UNRESOLVED_PLACEHOLDER",

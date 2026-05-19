@@ -501,15 +501,21 @@ class _PortPage(QWidget):
         main_layout.addWidget(scroll_area)
 
 
-class _SshSettingsPage(QWidget):
-    """应用级 SSH 私钥路径，供未单独指定 private_key_file 的步骤使用。"""
+class _StationTestSettingsPage(QWidget):
+    """测试站相关配置（SSH 私钥、煲机脚本等），与端口硬件配置分离。"""
 
     def __init__(self, translate_fn, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._t = translate_fn
         layout = QVBoxLayout(self)
-        self.grp = QGroupBox(self._t("config.ssh.group"), self)
-        form = QFormLayout(self.grp)
+
+        self.lbl_intro = QLabel(self._t("config.station.intro"), self)
+        self.lbl_intro.setWordWrap(True)
+        layout.addWidget(self.lbl_intro)
+
+        # 私钥配置
+        self.grp_ssh = QGroupBox(self._t("config.station.ssh_group"), self)
+        form_ssh = QFormLayout(self.grp_ssh)
         self.ed_private_key = QLineEdit(self)
         self.ed_private_key.setPlaceholderText("C:/Users/.../.ssh/id_ed25519")
         row = QHBoxLayout()
@@ -520,11 +526,15 @@ class _SshSettingsPage(QWidget):
         wrap = QWidget(self)
         wrap.setLayout(row)
         self._lbl_private_key = QLabel(self._t("config.ssh.private_key"), self)
-        form.addRow(self._lbl_private_key, wrap)
+        form_ssh.addRow(self._lbl_private_key, wrap)
         self.lbl_hint = QLabel(self._t("config.ssh.hint"), self)
         self.lbl_hint.setWordWrap(True)
-        form.addRow(self.lbl_hint)
+        form_ssh.addRow(self.lbl_hint)
+        layout.addWidget(self.grp_ssh)
 
+        # 煲机脚本配置
+        self.grp_burnin = QGroupBox(self._t("config.station.burnin_group"), self)
+        form_burnin = QFormLayout(self.grp_burnin)
         self.ed_import_script = QLineEdit(self)
         self.ed_import_script.setPlaceholderText("C:/Users/.../pvt_stress_test_v3.sh")
         row_imp = QHBoxLayout()
@@ -535,12 +545,12 @@ class _SshSettingsPage(QWidget):
         wrap_imp = QWidget(self)
         wrap_imp.setLayout(row_imp)
         self._lbl_import_script = QLabel(self._t("config.ssh.import_script"), self)
-        form.addRow(self._lbl_import_script, wrap_imp)
+        form_burnin.addRow(self._lbl_import_script, wrap_imp)
         self.lbl_import_script_hint = QLabel(self._t("config.ssh.import_script_hint"), self)
         self.lbl_import_script_hint.setWordWrap(True)
-        form.addRow(self.lbl_import_script_hint)
+        form_burnin.addRow(self.lbl_import_script_hint)
+        layout.addWidget(self.grp_burnin)
 
-        layout.addWidget(self.grp)
         layout.addStretch(1)
 
     def _on_browse(self) -> None:
@@ -564,7 +574,9 @@ class _SshSettingsPage(QWidget):
             self.ed_import_script.setText(path)
 
     def apply_retranslate(self) -> None:
-        self.grp.setTitle(self._t("config.ssh.group"))
+        self.lbl_intro.setText(self._t("config.station.intro"))
+        self.grp_ssh.setTitle(self._t("config.station.ssh_group"))
+        self.grp_burnin.setTitle(self._t("config.station.burnin_group"))
         self._lbl_private_key.setText(self._t("config.ssh.private_key"))
         self.btn_browse.setText(self._t("config.ssh.browse"))
         self.lbl_hint.setText(self._t("config.ssh.hint"))
@@ -610,14 +622,24 @@ class ConfigDialog(QDialog):
         
         layout.addWidget(self.toolbar)
         self.tabs = QTabWidget(self)
-        # 让内容随窗口扩展
         self.tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        # 端口配置（仅 A/B 口硬件通讯，不含 SSH/煲机等测试站项）
+        self.port_tabs = QTabWidget(self)
         self.page_a = _PortPage(self._t("config.portA"), self)
         self.page_b = _PortPage(self._t("config.portB"), self)
-        self.tabs.addTab(self.page_a, self._t("config.portA"))
-        self.tabs.addTab(self.page_b, self._t("config.portB"))
-        self.page_ssh = _SshSettingsPage(self._t, self)
-        self.tabs.addTab(self.page_ssh, self._t("config.tab.ssh"))
+        self.port_tabs.addTab(self.page_a, self._t("config.portA"))
+        self.port_tabs.addTab(self.page_b, self._t("config.portB"))
+        port_wrap = QWidget(self)
+        port_layout = QVBoxLayout(port_wrap)
+        port_layout.setContentsMargins(0, 0, 0, 0)
+        port_layout.addWidget(self.port_tabs)
+        self.tabs.addTab(port_wrap, self._t("config.tab.ports"))
+
+        # 测试站配置（SSH 私钥、煲机脚本及后续按站扩展项）
+        self.page_station = _StationTestSettingsPage(self._t, self)
+        self.tabs.addTab(self.page_station, self._t("config.tab.station"))
+
         layout.addWidget(self.tabs)
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
         self.buttons.accepted.connect(self._on_ok)
@@ -733,10 +755,11 @@ class ConfigDialog(QDialog):
         self.act_import.setText(self._t("config.btn.import"))
         self.act_reset.setText(self._t("config.btn.reset"))
         self.act_validate.setText(self._t("config.btn.validate"))
-        self.tabs.setTabText(0, self._t("config.portA"))
-        self.tabs.setTabText(1, self._t("config.portB"))
-        self.tabs.setTabText(2, self._t("config.tab.ssh"))
-        self.page_ssh.apply_retranslate()
+        self.tabs.setTabText(0, self._t("config.tab.ports"))
+        self.tabs.setTabText(1, self._t("config.tab.station"))
+        self.port_tabs.setTabText(0, self._t("config.portA"))
+        self.port_tabs.setTabText(1, self._t("config.portB"))
+        self.page_station.apply_retranslate()
 
     # ---- service wiring --------------------------------------------------
     def _load_to_ui(self) -> None:
@@ -755,15 +778,15 @@ class ConfigDialog(QDialog):
 
         ssh_cfg = getattr(cfg, "ssh", None)
         if ssh_cfg is not None:
-            self.page_ssh.ed_private_key.setText(
+            self.page_station.ed_private_key.setText(
                 getattr(ssh_cfg, "private_key_path", "") or ""
             )
-            self.page_ssh.ed_import_script.setText(
+            self.page_station.ed_import_script.setText(
                 getattr(ssh_cfg, "import_script_path", "") or ""
             )
         else:
-            self.page_ssh.ed_private_key.clear()
-            self.page_ssh.ed_import_script.clear()
+            self.page_station.ed_private_key.clear()
+            self.page_station.ed_import_script.clear()
     
     def _load_port_config(self, page, port_cfg) -> None:
         """加载单个端口的配置"""
@@ -845,8 +868,8 @@ class ConfigDialog(QDialog):
         self._collect_port_config(self.page_b, cfg.ports.portB)
 
         if getattr(cfg, "ssh", None) is not None:
-            cfg.ssh.private_key_path = self.page_ssh.ed_private_key.text().strip()
-            cfg.ssh.import_script_path = self.page_ssh.ed_import_script.text().strip()
+            cfg.ssh.private_key_path = self.page_station.ed_private_key.text().strip()
+            cfg.ssh.import_script_path = self.page_station.ed_import_script.text().strip()
         
         self._service._config = cfg
 
@@ -964,9 +987,9 @@ class ConfigDialog(QDialog):
         self.page_b.grp_tcp.ed_timeout.setText("2000")
         self.page_b.grp_tcp.sp_retries.setValue(3)
 
-        if hasattr(self, "page_ssh"):
-            self.page_ssh.ed_private_key.clear()
-            self.page_ssh.ed_import_script.clear()
+        if hasattr(self, "page_station"):
+            self.page_station.ed_private_key.clear()
+            self.page_station.ed_import_script.clear()
         
         # 显示成功消息
         QMessageBox.information(self, "重置完成", "所有配置已重置为默认值")

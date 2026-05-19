@@ -29,7 +29,11 @@ variables:
   torque_log_dir: 'Result/dogleg'
   extend_torque: 0.3      # 伸腿扭矩上限（调低，动作更柔和）
   kick_torque: 0.3        # 踢腿扭矩上限
-  move_duration_ms: 8000  # 伸腿/踢腿动作时间，5 秒
+  move_duration_ms: 8000  # 伸腿/踢腿动作时间
+  auto_report_hz: 200     # 0x01 状态反馈上报频率（协议最高约 500Hz）
+  motion_min_speed: 0.15  # 动作期间 |速度| 峰值下限 (rad/s)
+  motion_min_feedback: 20 # 至少收到的 0x01 反馈条数
+  motion_min_torque: 0.0    # 扭矩峰值下限 (Nm)，0 表示不检查
 
 steps:
   # 步骤0: MES初始化（MesInit）
@@ -203,6 +207,23 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
+  # 步骤8.1: 开启 0x01 电机状态自动上报（用于检测腿是否运动）
+  - id: step_8.1
+    name: EnableStatusAutoReport
+    type: pcan.set_auto_report
+    params:
+      enable: true
+      frequency_hz: ${auto_report_hz}
+      motor_id: ${motor_id}
+    timeout: 10000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
   # 步骤9: 伸腿动作，并记录扭矩生成日志
   - id: step_9
     name: ExtendLegWithTorqueLog
@@ -214,6 +235,10 @@ steps:
       log_dir: '${torque_log_dir}'
       torque_limit: ${extend_torque}
       duration_ms: ${move_duration_ms}
+      verify_motion: true
+      min_speed_rad_s: ${motion_min_speed}
+      min_feedback_count: ${motion_min_feedback}
+      min_torque_nm: ${motion_min_torque}
     timeout: 60000
     retries: 1
     condition: null
@@ -234,6 +259,10 @@ steps:
       log_dir: '${torque_log_dir}'
       torque_limit: ${kick_torque}
       duration_ms: ${move_duration_ms}
+      verify_motion: true
+      min_speed_rad_s: ${motion_min_speed}
+      min_feedback_count: ${motion_min_feedback}
+      min_torque_nm: ${motion_min_torque}
     timeout: 60000
     retries: 1
     condition: null

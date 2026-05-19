@@ -7,7 +7,7 @@ X5 8 路录音：经跳板 SSH 在目标机执行 arecord（与产线 case.mic_r
   python Seq/scripts/mic_test.py --jump-host 192.168.126.2 --target-host 192.168.127.10 \\
       --user root --private-key-file ~/.ssh/id_ed25519
 
-TestTool 序列中由 utility.run_python_script 调用，私钥路径可用应用「SSH」页注入的
+TestTool 序列中由 utility.run_python_script 调用，私钥路径可用「配置 → 测试站 → 私钥配置」注入的
 ``${ssh_private_key_path}`` 展开。
 """
 

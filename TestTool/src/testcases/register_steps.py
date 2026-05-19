@@ -42,6 +42,7 @@ from .steps.cases.pcan import (
     PcanConnectStep,
     PcanSearchMotorStep,
     PcanEnableMotorStep,
+    PcanSetAutoReportStep,
     PcanMoveWithTorqueLogStep,
     PcanDisconnectStep,
 )
@@ -280,6 +281,12 @@ def register_all_steps():
         step_type="pcan.enable_motor",
         step_class=PcanEnableMotorStep,
         aliases=["pcan_enable_motor", "pcan.motor_enable"],
+    )
+
+    register(
+        step_type="pcan.set_auto_report",
+        step_class=PcanSetAutoReportStep,
+        aliases=["pcan_set_auto_report", "pcan.auto_report"],
     )
 
     register(

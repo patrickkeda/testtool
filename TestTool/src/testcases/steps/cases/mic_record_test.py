@@ -3,7 +3,7 @@
 
 认证与 utility.ssh_exec 一致：password、private_key_file、private_key_env 三选一。
 不要将私钥明文写入提交到仓库的 YAML。
-未在步骤中填写 private_key_file 时，使用应用配置「SSH」页签中的默认私钥路径。
+未在步骤中填写 private_key_file 时，使用「配置 → 测试站 → 私钥配置」中的默认私钥路径。
 """
 
 from __future__ import annotations

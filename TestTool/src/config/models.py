@@ -228,7 +228,7 @@ class PortsConfig(BaseModel):
 
 
 class SshConfig(BaseModel):
-    """全局 SSH 客户端默认项（跳板执行、远程命令等步骤可复用）。"""
+    """全局 SSH/测试站默认项（配置界面：测试站 → 私钥配置、煲机脚本配置；config.yaml 仍为 ssh 节点）。"""
 
     private_key_path: str = Field(
         "",

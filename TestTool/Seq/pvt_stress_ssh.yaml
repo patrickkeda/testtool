@@ -35,8 +35,8 @@ metadata:
 # invoke_remote_background：远端 nohup ./ 脚本 + 本会话 tail -f 日志；拔 Hub 断 SSH 后压测仍在板上跑（见 pvt_nohup_log）。
 # 备选：pvt_invoke_remote_script=false → 本机脚本经 stdin（bash -s）执行，远端不落盘。
 # —— 换电脑后无法启动 / 步骤报错时请先核对 ——
-# 1) pvt_script_path：序列默认本机脚本路径；若在「设置 → SSH」中填写「远程上传脚本」，运行时会自动覆盖为本路径。
-# 2) Config/config.yaml → ssh.private_key_path：必须指向「本机」私钥文件，否则会 SSH 认证失败。
+# 1) pvt_script_path：序列默认本机脚本路径；若在「配置 → 测试站 → 煲机脚本配置」中填写，运行时会自动覆盖为本路径。
+# 2) 配置 → 测试站 → 私钥配置（写入 config.yaml 的 ssh.private_key_path）：须为本机私钥路径，否则 SSH 认证失败。
 # 3) robot_ip / pvt_ssh_host：新电脑到狗子/S100 的网络若不同，需改 IP；本机需能 ping 通。
 # 4) 启动方式：须在 TestTool 项目根目录执行 python -m src.app.main，否则可能找不到 Config/config.yaml。
 # 5) 依赖：本机需已安装 Python 依赖（含 paramiko、PySide6 等），与旧电脑一致。
@@ -50,7 +50,7 @@ variables:
   # 远端 SFTP 目标文件名（须与 remote_script_path 的 basename 一致；仅改此处即可换版本脚本）
   pvt_remote_script_basename: 'pvt_stress_test.sh'
   pvt_remote_script_path: '${pvt_remote_workdir}/${pvt_remote_script_basename}'
-  # 本机待上传脚本（可被配置 ssh.import_script_path 覆盖，见设置 → SSH 私钥下方；覆盖时会同步更新 basename）
+  # 本机待上传脚本（可被 config.yaml 的 ssh.import_script_path 覆盖，见配置 → 测试站 → 煲机脚本配置）
   pvt_script_path: 'client/vita_engineer_client/pvt_stress_test.sh'
   pvt_upload_local_file: '${pvt_script_path}'
   # 压测循环次数（默认 24；总轮数仍由远端脚本决定，此处仅传 --loops）

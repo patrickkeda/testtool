@@ -1099,7 +1099,7 @@ class MainWindow(QMainWindow):
                 context.set_data("ssh_private_key_path", pk_path.strip())
             else:
                 self.alerts.appendPlainText(
-                    f"[{port}] 提示: 配置中 ssh.private_key_path 为空；"
+                    f"[{port}] 提示: 「配置 → 测试站 → 私钥配置」为空（config.yaml ssh.private_key_path）；"
                     f"utility.ssh_exec / mic_record_ssh / utility.run_python_script（如 X5 麦克风）"
                     f"需在步骤里填写 private_key_file、password 或 private_key_env，"
                     f"否则 SSH 类步骤会报未配置认证或占位符无法展开。"
@@ -1212,7 +1212,7 @@ class MainWindow(QMainWindow):
             else:
                 self.alerts.appendPlainText(
                     "[PortA] 警告: 测试上下文创建失败，Worker 使用默认 Context；"
-                    "utility.ssh_exec 等步骤将无法使用配置中的 SSH 私钥路径。"
+                    "utility.ssh_exec 等步骤将无法使用「配置 → 测试站 → 私钥配置」。"
                 )
             # 设置测试模式（从PortPanel获取）
             test_mode = self.port_a.get_test_mode()
@@ -1265,7 +1265,7 @@ class MainWindow(QMainWindow):
             else:
                 self.alerts.appendPlainText(
                     "[PortB] 警告: 测试上下文创建失败，Worker 使用默认 Context；"
-                    "utility.ssh_exec 等步骤将无法使用配置中的 SSH 私钥路径。"
+                    "utility.ssh_exec 等步骤将无法使用「配置 → 测试站 → 私钥配置」。"
                 )
             # 设置测试模式（从PortPanel获取）
             test_mode = self.port_b.get_test_mode()

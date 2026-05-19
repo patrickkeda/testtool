@@ -57,6 +57,15 @@ class StepPropertiesDialog(QDialog):
         hint.setStyleSheet("color: #555;")
         root.addWidget(hint)
 
+        hint_policy = QLabel(
+            "任一步失败即停整测；失败策略字段主要写入 YAML。"
+            if not translator
+            else translator.t("seq.step_props.hint_on_failure")
+        )
+        hint_policy.setWordWrap(True)
+        hint_policy.setStyleSheet("color: #555; font-size: 11px;")
+        root.addWidget(hint_policy)
+
         form = QFormLayout()
         self.sp_retries = QSpinBox()
         self.sp_retries.setRange(0, 10)

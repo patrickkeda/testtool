@@ -3,7 +3,7 @@
 
 认证方式三选一：password、private_key_file、private_key_env（环境变量中的私钥 PEM 文本）。
 不要将私钥明文写入提交到仓库的 YAML；优先使用私钥文件路径或环境变量。
-未在步骤中填写 private_key_file 时，可使用应用配置「SSH」页签中的默认私钥路径（写入 Context）。
+未在步骤中填写 private_key_file 时，可使用「配置 → 测试站 → 私钥配置」中的默认私钥路径（写入 Context）。
 
 可选：allow_agent、look_for_keys（默认 false）。若命令行 ssh 依赖 ssh-agent（已 ssh-add），
 可将二者设为 true，并确保未强制传入错误的 private_key_file（否则会先尝试该密钥）。

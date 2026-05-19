@@ -146,7 +146,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # X5 8 路录音：本机执行 Seq/scripts/mic_test.py（私钥用应用「SSH」页 → ${ssh_private_key_path}）
+  # X5 8 路录音：本机执行 Seq/scripts/mic_test.py（私钥：配置 → 测试站 → ${ssh_private_key_path}）
   - id: step_x5_mic
     name: X5MicRecord
     type: utility.run_python_script

@@ -59,6 +59,9 @@ class _MESMixin:
         if existing_client is not None and existing_cfg is not None:
             return existing_client, existing_cfg, None
 
+        if ctx.get_data("mes_enabled", None) is False:
+            return None, None, "MES 已关闭（调试模式）"
+
         config = self._load_mes_config()
         if config is None:
             return None, None, "未找到 MES 配置文件: Config/config.yaml"

@@ -258,38 +258,6 @@ steps:
   at_config: null
   state_measurement_config: null
   manual_judgment_config: null
-- id: step_12.1
-  name: UWBSetID
-  type: engineer.test
-  params:
-    command: uwb=1,Vbot_D910FA7518C0%
-    robot_ip: ${robot_ip}
-    port: ${robot_port}
-    timeout: 30
-  timeout: 35000
-  retries: 2
-  condition: null
-  expect: null
-  on_failure: fail
-  at_config: null
-  state_measurement_config: null
-  manual_judgment_config: null
-- id: step_13
-  name: UWBDetection
-  type: engineer.test
-  params:
-    command: uwb=0%
-    robot_ip: ${robot_ip}
-    port: ${robot_port}
-    timeout: 30
-  timeout: 35000
-  retries: 1
-  condition: null
-  expect: null
-  on_failure: fail
-  at_config: null
-  state_measurement_config: null
-  manual_judgment_config: null
 - id: step_14
   name: BluetoothDetection
   type: engineer.test

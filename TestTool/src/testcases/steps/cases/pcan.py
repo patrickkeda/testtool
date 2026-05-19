@@ -10,6 +10,7 @@ PCAN (pcan-usb1) 相关测试步骤（复用 test/dogleg/tool.py 中的 CANCommu
 - pcan.connect               -> PcanConnectStep
 - pcan.search_motor          -> PcanSearchMotorStep
 - pcan.enable_motor          -> PcanEnableMotorStep
+- pcan.set_auto_report       -> PcanSetAutoReportStep
 - pcan.move_with_torque_log  -> PcanMoveWithTorqueLogStep
 - pcan.disconnect            -> PcanDisconnectStep
 """
@@ -77,6 +78,65 @@ def _active_motor_id(ctx: Context, params: Dict[str, Any]) -> int:
     if params.get("motor_id") is not None:
         return _resolve_motor_id_param(params.get("motor_id"), ctx, default=3)
     return _resolve_motor_id_param(ctx.get_data("motor_id", 3), ctx, default=3)
+
+
+def _get_dogleg_feedback_queue():
+    """dogleg tool 接收线程写入的 0x01 状态反馈队列。"""
+    try:
+        dogleg_dir = _get_dogleg_dir()
+        if dogleg_dir.is_dir() and str(dogleg_dir) not in sys.path:
+            sys.path.insert(0, str(dogleg_dir))
+        if "tool" in sys.modules:
+            return getattr(sys.modules["tool"], "data_queue", None)
+        from importlib import import_module
+
+        return getattr(import_module("tool"), "data_queue", None)
+    except Exception:
+        return None
+
+
+def _drain_feedback_queue(feedback_queue, stats: Dict[str, Any], max_items: int = 32) -> None:
+    """从 0x01 状态反馈队列更新运动统计（速度/扭矩/状态/故障）。"""
+    import queue as queue_mod
+
+    if feedback_queue is None:
+        return
+    processed = 0
+    while processed < max_items:
+        try:
+            fb = feedback_queue.get_nowait()
+        except queue_mod.Empty:
+            break
+        processed += 1
+        stats["feedback_count"] = int(stats.get("feedback_count", 0)) + 1
+        try:
+            spd = float(fb.get("speed", 0.0))
+            stats["last_speed"] = spd
+            stats["max_abs_speed"] = max(float(stats.get("max_abs_speed", 0.0)), abs(spd))
+        except (TypeError, ValueError):
+            pass
+        try:
+            trq = float(fb.get("torque", 0.0))
+            stats["max_abs_torque"] = max(float(stats.get("max_abs_torque", 0.0)), abs(trq))
+        except (TypeError, ValueError):
+            pass
+        status = fb.get("status")
+        if status is not None:
+            stats["last_status"] = int(status)
+            if int(status) == 1:
+                stats["saw_enabled"] = True
+            elif int(status) == 2:
+                stats["saw_fault_status"] = True
+        fault = fb.get("fault")
+        if fault is not None:
+            try:
+                fault_i = int(fault) & 0xFF
+            except (TypeError, ValueError):
+                fault_i = 0
+            stats["last_fault"] = fault_i
+            # 协议：bit7 默认为 1，仅 bit0-6 为故障位
+            if fault_i & 0x7F not in (0, 0x80):
+                stats["saw_fault_code"] = True
 
 
 def _get_dogleg_dir() -> Path:
@@ -459,17 +519,71 @@ class PcanEnableMotorStep(BaseStep):
             )
 
 
+class PcanSetAutoReportStep(BaseStep):
+    """开关电机 0x01 状态自动上报（协议功能码 0x09）。
+
+    params:
+    - enable: 是否开启（默认 true）
+    - frequency_hz: 上报频率 Hz（默认 200，协议最高约 500）
+    - motor_id: 电机 ID（默认识别结果）
+    """
+
+    def run_once(self, ctx: Context, params: Dict[str, Any]) -> StepResult:
+        comm = _get_or_create_can_comm(ctx)
+        if comm is None or not getattr(comm, "initialized", False):
+            return StepResult(
+                passed=False,
+                message="PCAN 总线未连接",
+                error="请先执行 pcan.connect 步骤",
+                error_code="PCAN_ERR_NOT_CONNECTED",
+            )
+
+        motor_id = _active_motor_id(ctx, params)
+        setattr(comm, "current_motor_id", motor_id)
+        enable = self.get_param_bool(params, "enable", True)
+        frequency = max(1, min(500, self.get_param_int(params, "frequency_hz", 200)))
+
+        if not hasattr(comm, "toggle_auto_report"):
+            return StepResult(
+                passed=False,
+                message="CANCommunicator 不支持 toggle_auto_report",
+                error="请检查 test/dogleg/tool.py",
+                error_code="PCAN_ERR_AUTO_REPORT_UNSUPPORTED",
+            )
+
+        try:
+            comm.toggle_auto_report(enable, frequency, motor_id)
+            ctx.set_state("pcan_auto_report", enable)
+            ctx.log_info(
+                f"[PCAN] 状态自动上报已{'开启' if enable else '关闭'}: "
+                f"motor_id={motor_id}, {frequency}Hz"
+            )
+            return StepResult(
+                passed=True,
+                message=f"状态自动上报{'开启' if enable else '关闭'}: {frequency}Hz",
+                data={"motor_id": motor_id, "enable": enable, "frequency_hz": frequency},
+            )
+        except Exception as e:  # pragma: no cover
+            return StepResult(
+                passed=False,
+                message=f"设置状态自动上报异常: {e}",
+                error=str(e),
+                error_code="PCAN_ERR_AUTO_REPORT_EXCEPTION",
+            )
+
+
 class PcanMoveWithTorqueLogStep(BaseStep):
-    """执行伸腿 / 踢腿动作，并记录扭矩日志（占位实现）
+    """执行伸腿 / 踢腿动作，记录扭矩日志，并可依据 0x01 状态反馈判定是否运动。
 
     参数：
     - action: 'extend' 或 'kick'
     - motor_id: 电机 ID
     - sn: 序列号（用于文件名）
     - log_dir: 日志目录（默认为 Result/dogleg）
-
-    实际动作控制和扭矩采集逻辑需要参考现有 tool.py 中的实现，
-    在此处补充 CAN 帧发送与扭矩采样/记录过程。
+    - verify_motion: 是否根据 0x01 反馈判定腿是否工作（默认 false）
+    - min_speed_rad_s: 动作过程中 |速度| 峰值下限（默认 0.15 rad/s）
+    - min_feedback_count: 至少收到的状态反馈条数（默认 20）
+    - min_torque_nm: 可选，|扭矩| 峰值下限（默认 0，不检查）
     """
 
     def run_once(self, ctx: Context, params: Dict[str, Any]) -> StepResult:
@@ -515,14 +629,29 @@ class PcanMoveWithTorqueLogStep(BaseStep):
         base_dir.mkdir(parents=True, exist_ok=True)
         log_path = base_dir / f"{sn}_{action}.csv"
 
+        verify_motion = self.get_param_bool(params, "verify_motion", False)
+        min_speed = float(params.get("min_speed_rad_s", ctx.get_data("motion_min_speed", 0.15)))
+        min_feedback = int(params.get("min_feedback_count", ctx.get_data("motion_min_feedback", 20)))
+        min_torque = float(params.get("min_torque_nm", ctx.get_data("motion_min_torque", 0.0)))
+
         ctx.log_info(
-            f"[PCAN] 执行动作 action={action}, motor_id={motor_id}, 日志路径={log_path}"
+            f"[PCAN] 执行动作 action={action}, motor_id={motor_id}, 日志路径={log_path}, "
+            f"verify_motion={verify_motion}"
         )
 
-        try:
-            import time
-            import queue
+        motion_stats: Dict[str, Any] = {
+            "feedback_count": 0,
+            "max_abs_speed": 0.0,
+            "max_abs_torque": 0.0,
+            "saw_enabled": False,
+            "saw_fault_status": False,
+            "saw_fault_code": False,
+            "last_status": None,
+            "last_fault": None,
+        }
+        control_error: Optional[str] = None
 
+        try:
             # 目标速度：默认 extend=+1.0 rad/s, kick=-1.0 rad/s，可通过参数覆盖
             default_target = 1.0 if action == "extend" else -1.0
             try:
@@ -533,28 +662,21 @@ class PcanMoveWithTorqueLogStep(BaseStep):
                     f"[PCAN] target_speed 参数解析失败，使用默认值 {default_target}"
                 )
 
-            # 从 dogleg 工具模块获取数据队列，用于读取当前速度反馈
-            from importlib import import_module
-
-            feedback_queue = None
-            try:
-                # 确保 dogleg 路径已在 sys.path 中（_get_or_create_can_comm 已通过 _load_can_communicator 处理）
-                dogleg_dir = _get_dogleg_dir()
-                if dogleg_dir.is_dir() and str(dogleg_dir) not in sys.path:
-                    sys.path.insert(0, str(dogleg_dir))
-                dogleg_mod = import_module("tool")
-                feedback_queue = getattr(dogleg_mod, "data_queue", None)
-            except Exception as e:  # pragma: no cover
-                ctx.log_warning(f"[PCAN] 无法导入 dogleg 工具模块用于读取反馈: {e}")
+            feedback_queue = _get_dogleg_feedback_queue()
+            if verify_motion and feedback_queue is None:
+                return StepResult(
+                    passed=False,
+                    message="无法获取电机状态反馈队列，请先开启自动上报",
+                    error="data_queue 不可用",
+                    error_code="PCAN_ERR_FEEDBACK_QUEUE_MISSING",
+                )
 
             new_file = not log_path.exists()
             with open(log_path, "a", encoding="utf-8") as f:
                 if new_file:
                     f.write("time_ms,torque,position,velocity,raw\n")
 
-                # PI 控制循环，尽量复用 tool.py 中的算法：
-                # 200Hz 控制频率，tor = 0.1 * err + 0.05 * sumerror，限幅 [-3,3]
-                control_interval = 1.0 / 200.0  # 5ms
+                control_interval = 1.0 / 200.0
                 sumerror_spd = 0.0
                 current_speed = 0.0
                 start_time = time.time()
@@ -564,60 +686,123 @@ class PcanMoveWithTorqueLogStep(BaseStep):
                 while time.time() - start_time < duration_s:
                     loop_start = time.time()
 
-                    # 更新当前速度：从反馈队列中取最新 speed
-                    if feedback_queue is not None:
-                        processed = 0
-                        while processed < 10:
-                            try:
-                                fb = feedback_queue.get_nowait()
-                            except queue.Empty:
-                                break
-                            try:
-                                current_speed = float(fb.get("speed", current_speed))
-                            except Exception:
-                                pass
-                            processed += 1
+                    _drain_feedback_queue(feedback_queue, motion_stats, max_items=32)
+                    if "last_speed" in motion_stats:
+                        try:
+                            current_speed = float(motion_stats["last_speed"])
+                        except (TypeError, ValueError):
+                            pass
 
-                    # PI 控制计算扭矩
                     errspd = target_speed - current_speed
                     sumerror_spd += 0.05 * errspd
                     torque = 0.1 * errspd + 0.05 * sumerror_spd
-
-                    # 原算法扭矩限幅 [-3, 3]，再叠加外部 torque_limit 限幅
                     torque = max(-3.0, min(3.0, torque))
                     torque = max(-abs(torque_limit), min(abs(torque_limit), torque))
 
-                    # 发送 MPC 命令
                     try:
                         comm.send_mpc_command(0.0, 0.0, torque)
                     except Exception as e:  # pragma: no cover
                         ctx.log_warning(f"[PCAN] 发送 MPC 命令失败（忽略继续）: {e}")
 
-                    # 每 10ms 记录一次日志
                     now = time.time()
                     if now - next_log_time >= 0.01:
                         now_ms = int(now * 1000)
                         f.write(f"{now_ms},{torque},{0.0},{current_speed},\n")
                         next_log_time = now
 
-                    # 保持控制周期接近 5ms
                     elapsed = time.time() - loop_start
                     sleep_time = control_interval - elapsed
                     if sleep_time > 0:
                         time.sleep(sleep_time)
 
+            _drain_feedback_queue(feedback_queue, motion_stats, max_items=64)
+
         except Exception as e:  # pragma: no cover
-            ctx.log_warning(f"[PCAN] 伸腿/踢腿控制执行异常（继续后续步骤）: {e}")
+            control_error = str(e)
+            ctx.log_warning(f"[PCAN] 伸腿/踢腿控制执行异常: {e}")
+
+        result_data = {
+            "action": action,
+            "motor_id": motor_id,
+            "sn": sn,
+            "log_path": str(log_path),
+            "verify_motion": verify_motion,
+            "motion_stats": motion_stats,
+        }
+
+        if control_error and verify_motion:
+            return StepResult(
+                passed=False,
+                message=f"动作 {action} 控制异常: {control_error}",
+                error=control_error,
+                error_code="PCAN_ERR_MOTION_CONTROL_EXCEPTION",
+                data=result_data,
+            )
+
+        if verify_motion:
+            if motion_stats["feedback_count"] < min_feedback:
+                msg = (
+                    f"未收到足够的状态反馈(0x01): {motion_stats['feedback_count']}/{min_feedback}，"
+                    "请确认已执行 pcan.set_auto_report"
+                )
+                ctx.log_error(f"[PCAN] {msg}")
+                return StepResult(
+                    passed=False,
+                    message=msg,
+                    error=msg,
+                    error_code="PCAN_ERR_MOTION_NO_FEEDBACK",
+                    data=result_data,
+                )
+            if motion_stats.get("saw_fault_status") or motion_stats.get("saw_fault_code"):
+                msg = (
+                    f"动作 {action} 期间电机故障: status={motion_stats.get('last_status')}, "
+                    f"fault=0x{int(motion_stats.get('last_fault') or 0):02X}"
+                )
+                ctx.log_error(f"[PCAN] {msg}")
+                return StepResult(
+                    passed=False,
+                    message=msg,
+                    error=msg,
+                    error_code="PCAN_ERR_MOTION_FAULT",
+                    data=result_data,
+                )
+            if float(motion_stats["max_abs_speed"]) < min_speed:
+                msg = (
+                    f"动作 {action} 速度峰值不足: "
+                    f"{motion_stats['max_abs_speed']:.3f} < {min_speed:.3f} rad/s"
+                )
+                ctx.log_error(f"[PCAN] {msg}")
+                return StepResult(
+                    passed=False,
+                    message=msg,
+                    error=msg,
+                    error_code="PCAN_ERR_MOTION_SPEED_LOW",
+                    data=result_data,
+                )
+            if min_torque > 0 and float(motion_stats["max_abs_torque"]) < min_torque:
+                msg = (
+                    f"动作 {action} 扭矩峰值不足: "
+                    f"{motion_stats['max_abs_torque']:.3f} < {min_torque:.3f} Nm"
+                )
+                ctx.log_error(f"[PCAN] {msg}")
+                return StepResult(
+                    passed=False,
+                    message=msg,
+                    error=msg,
+                    error_code="PCAN_ERR_MOTION_TORQUE_LOW",
+                    data=result_data,
+                )
+            ctx.log_info(
+                f"[PCAN] 动作 {action} 运动检测通过: "
+                f"feedback={motion_stats['feedback_count']}, "
+                f"max|speed|={motion_stats['max_abs_speed']:.3f} rad/s, "
+                f"max|torque|={motion_stats['max_abs_torque']:.3f} Nm"
+            )
 
         return StepResult(
             passed=True,
-            message=f"动作 {action} 执行占位步骤完成，日志文件: {log_path}",
-            data={
-                "action": action,
-                "motor_id": motor_id,
-                "sn": sn,
-                "log_path": str(log_path),
-            },
+            message=f"动作 {action} 完成，日志: {log_path}",
+            data=result_data,
         )
 
 
