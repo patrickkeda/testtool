@@ -275,6 +275,8 @@ steps:
       address: 101
       count: 1
       unit_id: ${plc_unit_id}
+      expected_low: 900
+      expected_high: 2500
       description: '对比电压：读取寄存器 40101 (实际地址 101)'
       use_coil: false
     timeout: 5000
