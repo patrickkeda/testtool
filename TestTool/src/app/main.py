@@ -128,7 +128,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     QCoreApplication.setApplicationName("TestTool")
 
     app = QApplication(sys.argv)
-    # 输入法：启动时不切换；仅在 scan.sn 弹窗时由 force_english_keyboard 切英文（见 scan_sn / ime.py）
+    # 输入法：scan.sn 弹窗切英文，关闭后 restore_chinese_keyboard 恢复简体中文（见 scan_sn / input_locale.py）
 
     # 初始化配置服务
     # 在 exe 环境中：

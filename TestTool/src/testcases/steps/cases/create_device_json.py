@@ -29,13 +29,29 @@ def _resolve_config_path(config_path: str) -> Optional[Path]:
     return None
 
 
+def _pair_versions(pair: Any) -> Tuple[str, str]:
+    if pair is None:
+        return "", ""
+    download = str(getattr(pair, "factory_download_version", "") or "").strip()
+    install = str(getattr(pair, "factory_install_version", "") or "").strip()
+    return download, install
+
+
 def _load_factory_versions_from_config(
     config_path: str = "Config/config.yaml",
-) -> Tuple[str, str]:
-    """从 config.yaml 的 device_json 节点读取出厂版本（非 versions，不参与 compare_version）。"""
+    *,
+    s100_encrypted: Optional[bool] = None,
+) -> Tuple[str, str, str]:
+    """从 config.yaml device_json 按加密状态读取 encrypted / not_encrypted 两套版本之一。
+
+    Returns
+    -------
+    (download, install, profile_label)
+    profile_label: encrypted | not_encrypted | unknown
+    """
     cfg_file = _resolve_config_path(config_path)
     if cfg_file is None:
-        return "", ""
+        return "", "", "unknown"
 
     try:
         from ....config.service import ConfigService
@@ -43,12 +59,50 @@ def _load_factory_versions_from_config(
         root = ConfigService(str(cfg_file)).load()
         device_json_cfg = getattr(root, "device_json", None)
         if device_json_cfg is None:
-            return "", ""
-        download = str(getattr(device_json_cfg, "factory_download_version", "") or "").strip()
-        install = str(getattr(device_json_cfg, "factory_install_version", "") or "").strip()
-        return download, install
+            return "", "", "unknown"
+
+        if s100_encrypted is True:
+            dl, ins = _pair_versions(getattr(device_json_cfg, "encrypted", None))
+            return dl, ins, "encrypted"
+        if s100_encrypted is False:
+            dl, ins = _pair_versions(getattr(device_json_cfg, "not_encrypted", None))
+            return dl, ins, "not_encrypted"
+
+        return "", "", "unknown"
     except Exception:
-        return "", ""
+        return "", "", "unknown"
+
+
+def _resolve_s100_encrypted_from_ctx(ctx: Context, params: Dict[str, Any]) -> Optional[bool]:
+    """解析 S100 是否已加密：步骤参数优先，其次上下文（probe / 加密校验步骤写入）。"""
+    raw_profile = params.get("encryption_profile", params.get("version_profile", "auto"))
+    profile = str(raw_profile or "auto").strip().lower()
+    if profile in ("encrypted", "enc", "1", "true", "yes"):
+        return True
+    if profile in ("not_encrypted", "unencrypted", "plain", "0", "false", "no"):
+        return False
+
+    for key in ("s100_encrypted", "step_probe_s100_encrypted_passed"):
+        val = ctx.get_data(key)
+        if val is None:
+            continue
+        if isinstance(val, bool):
+            return val
+        sl = str(val).strip().lower()
+        if sl in ("1", "true", "yes", "on"):
+            return True
+        if sl in ("0", "false", "no", "off"):
+            return False
+
+    # 兼容仅写入 s100_need_provision 的探测步骤
+    need = ctx.get_data("s100_need_provision")
+    if need is not None:
+        sl = str(need).strip().lower()
+        if sl in ("true", "1", "yes"):
+            return False
+        if sl in ("false", "0", "no"):
+            return True
+    return None
 
 
 class CreateDeviceJsonStep(BaseStep):
@@ -62,8 +116,10 @@ class CreateDeviceJsonStep(BaseStep):
         - imei_step_id: 读取 IMEI 的步骤ID（默认 "step_4"）
         - output_dir: 输出目录（默认 "Result/upload"）
         - config_path: 版本配置文件（默认 "Config/config.yaml"）
-        - factory_download_version: 覆盖 config 中 device_json.factory_download_version
-        - factory_install_version: 覆盖 config 中 device_json.factory_install_version
+        - factory_download_version / factory_install_version: 强制覆盖（忽略加密分支）
+        - encryption_profile: auto（默认）| encrypted | not_encrypted
+          auto 时根据上下文 s100_encrypted / s100_need_provision（需前置 probe 步骤）
+        - config 中 device_json.encrypted / device_json.not_encrypted 分别配置两套版本
 
         从前面步骤提取的数据：
         - imei: 从读取 IMEI 的步骤响应中提取
@@ -85,24 +141,43 @@ class CreateDeviceJsonStep(BaseStep):
 
             ctx.log_info(f"获取SN: {sn}")
 
-            factory_download, factory_install = _load_factory_versions_from_config(config_path)
+            s100_encrypted = _resolve_s100_encrypted_from_ctx(ctx, params)
+            factory_download, factory_install, profile = _load_factory_versions_from_config(
+                config_path, s100_encrypted=s100_encrypted
+            )
             param_dl = params.get("factory_download_version")
             param_in = params.get("factory_install_version")
             if param_dl is not None and str(param_dl).strip():
                 factory_download = str(param_dl).strip()
+                profile = "param_override"
             if param_in is not None and str(param_in).strip():
                 factory_install = str(param_in).strip()
+                profile = "param_override"
+
+            if s100_encrypted is None:
+                return self.create_failure_result(
+                    "无法判断 S100 是否已加密：请在 CreateDeviceJson 之前执行 "
+                    "case.probe_s100_provision（或设置 encryption_profile）。",
+                    error="S100_ENCRYPTION_STATE_UNKNOWN",
+                )
 
             if not factory_download or not factory_install:
+                which = "encrypted（已加密）" if s100_encrypted else "not_encrypted（未加密）"
                 return self.create_failure_result(
-                    "出厂版本未配置：请在「配置 → 版本配置」中填写 device.json 的 "
-                    "出厂下载/安装版本，"
-                    "或在步骤参数中指定 factory_download_version / factory_install_version",
+                    f"出厂版本未配置：请在「配置 → 版本配置」填写 device.json 的 {which} "
+                    "下载/安装版本，或在本步骤参数中指定 factory_download_version / "
+                    "factory_install_version。",
                     error="FACTORY_VERSION_MISSING",
                 )
 
+            enc_label = (
+                "已加密" if s100_encrypted is True else (
+                    "未加密" if s100_encrypted is False else "未探测"
+                )
+            )
             ctx.log_info(
-                f"出厂版本: factoryDownloadVersion={factory_download}, "
+                f"出厂版本档={profile}（S100 {enc_label}）: "
+                f"factoryDownloadVersion={factory_download}, "
                 f"factoryInstallVersion={factory_install}"
             )
 

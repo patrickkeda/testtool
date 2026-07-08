@@ -11,13 +11,14 @@ metadata:
 variables:
   robot_ip: "192.168.126.2"
   robot_port: 3579
+  x5_ip: "192.168.127.10"
   zebra_printer_name: 'ZDesigner 110Xi4 600 dpi (副本 1)'
   battery_percent_min: 0
   battery_percent_max: 100
 
 steps:
 
-  # Step MES-0: MES初始化（MesInit）
+  # Step MES-0: MES初始化（MesInit）；失败即停测，不进入后续整机流程
   - id: step_mes_0
     name: MESInit
     type: mes.heartbeat
@@ -26,7 +27,7 @@ steps:
     retries: 2
     condition: null
     expect: null
-    on_failure: continue
+    on_failure: fail
     at_config: null
     state_measurement_config: null
     manual_judgment_config: null
@@ -49,7 +50,7 @@ steps:
 
   # Step 2: 进入工程模式
 
-  # Step MES-1: MesStart（按SN判站/获取工单）
+  # Step MES-1: MesStart（按SN判站/获取工单）；失败即停测，不重试以免 MES 报错后仍继续
   - id: step_mes_1
     name: MesStartCheckStation
     type: mes.get_work_order
@@ -57,10 +58,10 @@ steps:
       sn: '${sn}'
       expected_station: '${mes.effective_station}'
     timeout: 15000
-    retries: 1
+    retries: 0
     condition: null
     expect: null
-    on_failure: continue
+    on_failure: fail
     at_config: null
     state_measurement_config: null
     manual_judgment_config: null
@@ -74,6 +75,32 @@ steps:
       timeout: 30
     timeout: 35000
     retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 2.5: 检查 S100 煲机告警（diagnostic + archive 必查；Slam/IMU 不拦截，舵机拦截）
+  - id: step_2.5_check_diagnostic_fault
+    name: CheckDiagnosticFault
+    type: case.check_diagnostic_fault
+    params:
+      host: '${robot_ip}'
+      username: root
+      port: 22
+      private_key_file: '${ssh_private_key_path}'
+      strict_host_key: false
+      connect_timeout: 25
+      exec_timeout: 60
+      archive_exec_timeout: 120
+      archive_dir: '/log/usr/archive'
+      save_local: true
+      local_output_dir: 'Result/diagnostic'
+      fail_message: '煲机时出现舵机异常请联系工程师处理'
+    timeout: 180000
+    retries: 1
     condition: null
     expect: null
     on_failure: fail
@@ -153,16 +180,39 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
+  # Step 6.5: 探测 S100 是否已加密（供 CreateDeviceJson 选用 encrypted / not_encrypted 出厂版本）
+  - id: step_probe_s100_encrypted
+    name: ProbeS100EncryptedForDeviceJson
+    type: case.probe_s100_provision
+    params:
+      host: '${robot_ip}'
+      username: root
+      port: 22
+      private_key_file: '${ssh_private_key_path}'
+      strict_host_key: false
+      connect_timeout: 25
+      exec_timeout: 30
+    timeout: 45000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
   # Step 7: 创建 device.json 文件
   # 从前面步骤的结果中提取数据并创建 JSON 文件
   # 文件路径: TestTool\Result\upload\${sn}\device.json
-  # factoryDownloadVersion/factoryInstallVersion: 见 config.yaml device_json
+  # factoryDownloadVersion/factoryInstallVersion: config.yaml device_json.encrypted / not_encrypted
   - id: step_7
     name: CreateDeviceJson
     type: case.create_device_json
     params:
       imei_step_id: 'step_6'
       output_dir: 'Result/upload'
+      config_path: Config/config.yaml
+      encryption_profile: auto
     timeout: 30000
     retries: 1
     condition: null
@@ -220,29 +270,6 @@ steps:
       port: ${robot_port}
       timeout: 30
     timeout: 35000
-    retries: 1
-    condition: null
-    expect: null
-    on_failure: fail
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
-
-  # Step 10.2: 打印 IMEI + 扰码 标签
-  - id: step_10.2
-    name: PrintImeiScrambleLabel
-    type: printer.zebra.image
-    params:
-      channel: local
-      printer_name: '${zebra_printer_name}'
-      copies: 1
-      imei: '${imei}'
-      scramble: '${scramble}'
-      imei_font_source: 'Result/font_sources/vbot_zip/Vbot Sans'
-      scramble_font_source: 'Result/font_sources/许可标志样式矢量图及字体库'
-      save_preview: true
-      preview: false
-    timeout: 15000
     retries: 1
     condition: null
     expect: null
@@ -411,6 +438,21 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
+  # Step 13.5: 站立后等待 5 秒再拍 ircamera
+  - id: step_14.5_wait_before_ircamera
+    name: WaitAfterStandUpBeforeIRCamera
+    type: utility.delay
+    params:
+      duration_ms: 5000
+    timeout: 5200
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
   # Step 14: 拍摄一张 ircamera 的图片
   - id: step_15
     name: IRCameraCapture
@@ -422,6 +464,40 @@ steps:
       timeout: 30
     timeout: 35000
     retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 15.0: 人工确认红外照片非全黑
+  - id: step_15.0_ir_photo_not_black
+    name: IRPhotoNotBlackConfirm
+    type: utility.confirm
+    params:
+      title: '红外照片确认'
+      message: '请查看刚保存的红外照片，确认画面不为全黑。若照片全黑请勿继续，并联系工程师。'
+      confirm_text: '确认（非黑）'
+      cancel_text: '取消'
+      allow_cancel: true
+    timeout: 300000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 15.1: 拍照后等待校验服务就绪（降低 ircamera=2 首次 1302 超时）
+  - id: step_15.1_wait_ir_verify
+    name: WaitBeforeIRCameraVerify
+    type: utility.delay
+    params:
+      duration_ms: 5000
+    timeout: 5200
+    retries: 0
     condition: null
     expect: null
     on_failure: fail
@@ -447,12 +523,12 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 拉取语音 license（tts=0），唤醒大头（tts=2）紧接其后；两条语音确认弹窗在 laydown 前
-  - id: step_15_voice_license
-    name: PullVoiceLicense
+  # Step 15.3: 打开补光灯（fill_light=1）
+  - id: step_15.3_fill_light_on
+    name: FillLightOn
     type: engineer.test
     params:
-      command: 'tts=0%'
+      command: 'fill_light=1%'
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
@@ -465,12 +541,31 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 15.1: 唤醒大头
-  - id: step_15.1
-    name: WakeUpHead
+  # Step 15.4: 人工确认补光灯已打开
+  - id: step_15.4_fill_light_confirm
+    name: FillLightOnConfirm
+    type: utility.confirm
+    params:
+      title: '补光灯确认'
+      message: '请确认补光灯已正常亮起。若未亮请勿继续，并联系工程师。'
+      confirm_text: '已亮，确认'
+      cancel_text: '未亮'
+      allow_cancel: true
+    timeout: 300000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 15.5: 关闭补光灯（fill_light=0）
+  - id: step_15.5_fill_light_off
+    name: FillLightOff
     type: engineer.test
     params:
-      command: 'tts=2,sn=${sn}%'
+      command: 'fill_light=0%'
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
@@ -516,6 +611,21 @@ steps:
     expect: null
     on_failure: fail
 
+  # Step 15.1: 上传 S100 舵机标定数据（/app_param/servo/）到 cal 目录
+  - id: step_16.1
+    name: UploadServoCalibData
+    type: engineer.test
+    params:
+      command: 'transfer=1,/app_param/servo/,TestTool/Result/cal/${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 70000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
   # 步骤16: 休息 3 秒
   - id: step_17
     name: WaitAfterPowerOn
@@ -524,6 +634,39 @@ steps:
       duration_ms: 5000
     timeout: 5200
     retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 17.5: S100 加密校验（写 efuse 前；provision_tool --get-lifecycle 退出码 4 = 已加密）
+  - id: step_17.5
+    name: CheckS100LifecycleEncrypted
+    type: utility.ssh_exec
+    params:
+      host: '${robot_ip}'
+      username: root
+      port: 22
+      command: >-
+        bash -lc 'chmod 777 /usr/hobot/bin/provision_tool;
+        /usr/hobot/bin/provision_tool --get-lifecycle;
+        rc=$?;
+        if [ "$rc" -eq 4 ]; then
+          echo "S100 lifecycle=4 (LIFECYCLE_OHP, encrypted) OK";
+          exit 0;
+        else
+          echo "S100 未加密或 lifecycle 异常, exit=$rc (期望 4)" >&2;
+          exit 1;
+        fi'
+      strict_host_key: false
+      expect_zero_exit: true
+      connect_timeout: 25
+      exec_timeout: 30
+      keepalive_sec: 10
+    timeout: 45000
+    retries: 1
     condition: null
     expect: null
     on_failure: fail
@@ -542,6 +685,236 @@ steps:
       timeout: 30
     timeout: 35000
     retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 18.05: S100 重启 sn_server（efuse 写 SN 后；直连 S100，不经 X5）
+  - id: step_18.05_restart_sn_server
+    name: RestartSnServerOnS100
+    type: utility.ssh_exec
+    params:
+      host: '${robot_ip}'
+      username: root
+      port: 22
+      private_key_file: '${ssh_private_key_path}'
+      command: 'systemctl restart sn_server'
+      strict_host_key: false
+      expect_zero_exit: true
+      connect_timeout: 25
+      exec_timeout: 60
+      keepalive_sec: 10
+    timeout: 70000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 18.06: S100 执行 query_sn 确认 SN 写入成功（stdout 须含扫描 SN）
+  - id: step_18.06_verify_query_sn
+    name: VerifyQuerySnOnS100
+    type: utility.ssh_exec
+    params:
+      host: '${robot_ip}'
+      username: root
+      port: 22
+      private_key_file: '${ssh_private_key_path}'
+      command: 'bash -lc "cd /app/efuse && sleep 2 && ./query_sn"'
+      pass_on_stdout_regex: '${sn}'
+      expect_zero_exit: true
+      strict_host_key: false
+      connect_timeout: 25
+      exec_timeout: 60
+      keepalive_sec: 10
+    timeout: 70000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 18.1: X5 重启 speech 服务（query_sn 校验通过后；经 S100 跳板 SSH）
+  - id: step_18.1_restart_speech
+    name: RestartSpeechOnX5
+    type: utility.ssh_exec
+    params:
+      jump_host: '${robot_ip}'
+      jump_port: 22
+      host: '${x5_ip}'
+      username: root
+      port: 22
+      private_key_file: '${ssh_private_key_path}'
+      command: 'systemctl restart speech'
+      strict_host_key: false
+      expect_zero_exit: true
+      connect_timeout: 25
+      exec_timeout: 60
+      keepalive_sec: 10
+    timeout: 70000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 18.21: X5 打开百度唤醒 / speech_service 识别模式（经 S100 跳板 SSH）
+  - id: step_18.21_speech_baidu_mode
+    name: X5SpeechBaiduWakeMode
+    type: utility.ssh_exec
+    params:
+      jump_host: '${robot_ip}'
+      jump_port: 22
+      host: '${x5_ip}'
+      username: root
+      port: 22
+      private_key_file: '${ssh_private_key_path}'
+      command: >-
+        bash -lc 'source /app/script/env.sh && ros2 service call /speech_control speech_msgs/srv/SpeechControl "{request_type: 3, enable: true, mode: 1}"'
+      strict_host_key: false
+      expect_zero_exit: true
+      connect_timeout: 25
+      exec_timeout: 90
+      keepalive_sec: 10
+    timeout: 120000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 18.22: X5 打开连续对话 / 连续命令词识别
+  - id: step_18.22_speech_continuous_dialog
+    name: X5SpeechContinuousDialog
+    type: utility.ssh_exec
+    params:
+      jump_host: '${robot_ip}'
+      jump_port: 22
+      host: '${x5_ip}'
+      username: root
+      port: 22
+      private_key_file: '${ssh_private_key_path}'
+      command: >-
+        bash -lc 'source /app/script/env.sh && ros2 service call /speech_control speech_msgs/srv/SpeechControl "{request_type: 6, enable: true, mode: 0}"'
+      strict_host_key: false
+      expect_zero_exit: true
+      connect_timeout: 25
+      exec_timeout: 90
+      keepalive_sec: 10
+    timeout: 120000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 18.23: X5 打开闲聊
+  - id: step_18.23_speech_chat_enable
+    name: X5SpeechChatEnable
+    type: utility.ssh_exec
+    params:
+      jump_host: '${robot_ip}'
+      jump_port: 22
+      host: '${x5_ip}'
+      username: root
+      port: 22
+      private_key_file: '${ssh_private_key_path}'
+      command: >-
+        bash -lc 'source /app/script/env.sh && ros2 service call /speech_control speech_msgs/srv/SpeechControl "{request_type: 4, enable: true, mode: 0}"'
+      strict_host_key: false
+      expect_zero_exit: true
+      connect_timeout: 25
+      exec_timeout: 90
+      keepalive_sec: 10
+    timeout: 120000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 18.2: 拉取语音 license（tts=0）
+  - id: step_18.2_voice_license
+    name: PullVoiceLicense
+    type: engineer.test
+    params:
+      command: 'tts=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 18.3: 确认是否听到「大头起床了」音效
+  - id: step_18.3_wake_audio_confirm
+    name: HearWakeHeadAudioConfirm
+    type: utility.confirm
+    params:
+      title: '语音：大头起床'
+      message: '请确认是否听到「大头起床了」语音提示？未听到请勿继续，并联系工程师。'
+      confirm_text: '听到了'
+      cancel_text: '未听到'
+      allow_cancel: true
+    timeout: 300000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 18.4: 唤醒大头（tts=2）
+  - id: step_18.4_wake_head
+    name: WakeUpHead
+    type: engineer.test
+    params:
+      command: 'tts=2,sn=${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 18.5: 确认「大头今天天气怎么样」问答及大头回复
+  - id: step_18.5_weather_reply_confirm
+    name: VoiceWeatherReplyConfirm
+    type: utility.confirm
+    params:
+      title: '语音：问天气'
+      message: '请对机器狗说「大头，今天天气怎么样」，确认已提问且收到大头正确回复后点击「确认」继续。'
+      confirm_text: '确认'
+      cancel_text: '取消'
+      allow_cancel: true
+    timeout: 300000
+    retries: 0
     condition: null
     expect: null
     on_failure: fail
@@ -649,43 +1022,6 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # 产线语音交互确认弹窗（laydown 前）
-  - id: step_15_after_license_wake_phrase
-    name: VoicePromptWakeHead
-    type: utility.confirm
-    params:
-      title: '语音：大头大头唤醒'
-      message: '请对机器狗说「大头大头唤醒」，确认已说完或已听到正确响应后点击「确认」继续。'
-      confirm_text: '确认'
-      cancel_text: '取消'
-      allow_cancel: true
-    timeout: 300000
-    retries: 0
-    condition: null
-    expect: null
-    on_failure: fail
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
-
-  - id: step_15_after_license_weather
-    name: VoicePromptWeather
-    type: utility.confirm
-    params:
-      title: '语音：问天气'
-      message: '请对机器狗说「今天天气怎么样」（或等价问法），确认已说完或已听到正确响应后点击「确认」继续。'
-      confirm_text: '确认'
-      cancel_text: '取消'
-      allow_cancel: true
-    timeout: 300000
-    retries: 0
-    condition: null
-    expect: null
-    on_failure: fail
-    at_config: null
-    state_measurement_config: null
-    manual_judgment_config: null
-
   # Step 23: 站立
   - id: step_23
     name: StandUp
@@ -735,12 +1071,12 @@ steps:
     expect: null
     on_failure: fail
 
-  # 下电前设置语音音量（tts=3% 默认 60；指定音量示例 tts=3,volume=50%）
+  # 下电前设置语音音量为 60%
   - id: step_25.5
     name: SetTtsVolume60
     type: engineer.test
     params:
-      command: 'tts=3%'
+      command: 'tts=3,volume=60%'
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
@@ -763,6 +1099,29 @@ steps:
       port: ${robot_port}
       timeout: 30
     timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # Step 26.1: 下电后打印 IMEI + 扰码 标签
+  - id: step_26.1
+    name: PrintImeiScrambleLabel
+    type: printer.zebra.image
+    params:
+      channel: local
+      printer_name: '${zebra_printer_name}'
+      copies: 1
+      imei: '${imei}'
+      scramble: '${scramble}'
+      imei_font_source: 'Result/font_sources/vbot_zip/Vbot Sans'
+      scramble_font_source: 'Result/font_sources/许可标志样式矢量图及字体库'
+      save_preview: true
+      preview: false
+    timeout: 15000
     retries: 1
     condition: null
     expect: null

@@ -24,6 +24,8 @@ paramiko>=3.4.0
 pandas>=1.5.0
 matplotlib>=3.5.0
 numpy>=1.21.0
+Pillow>=9.0.0
+opencv-python-headless>=4.5.5,<5.0.0
 
 # 加密和安全
 cryptography>=3.4.8

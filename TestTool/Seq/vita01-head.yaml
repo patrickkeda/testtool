@@ -839,6 +839,42 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
+  # 步骤32b: 双目内参检测 (camera=0%)
+  - id: step_36_camera0
+    name: CameraIntrinsicDetection
+    type: engineer.test
+    params:
+      command: 'camera=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 70000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤32c: 双目拍照检测 (camera=1%)
+  - id: step_36_camera1
+    name: CameraCaptureDetection
+    type: engineer.test
+    params:
+      command: 'camera=1,Result/${sn}%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 60
+    timeout: 70000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
   # 步骤33: WiFi 检测 (wifi=0%)，检测 VitaDynamics 网络
   - id: step_37
     name: WiFiDetection

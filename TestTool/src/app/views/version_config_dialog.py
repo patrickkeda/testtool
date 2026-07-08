@@ -257,8 +257,9 @@ class VersionConfigDialog(QDialog):
 
         layout = QVBoxLayout(self)
         hint = QLabel(
-            "S100/X5、MOTOR 等用于 version=0 结果比对；下方 device.json 区块仅写入上传用的 "
-            "factoryDownloadVersion / factoryInstallVersion，不参与版本校验。",
+            "S100/X5、MOTOR 等用于 version=0 结果比对；"
+            "device.json 区块仅写入上传用的出厂版本，不参与版本校验。"
+            "OTA 升级包版本请在「配置 → OTA 版本」中单独维护。",
             self,
         )
         hint.setWordWrap(True)
@@ -294,24 +295,38 @@ class VersionConfigDialog(QDialog):
             form = QFormLayout(group)
             sw_edit = QLineEdit(self)
             sw_edit.setPlaceholderText(f"请输入 {key} 的 sw_version")
-            self._single_edits[key] = {
+            field_edits = {
                 "sw_version": sw_edit,
             }
             form.addRow("软件版本:", sw_edit)
+            if key == "UWB":
+                compat_edit = QLineEdit(self)
+                compat_edit.setPlaceholderText("可选：兼容版本，与软件版本任一匹配即通过")
+                field_edits["sw_version_compat"] = compat_edit
+                form.addRow("兼容版本:", compat_edit)
+            self._single_edits[key] = field_edits
             layout.addWidget(group)
 
         device_json_group = QGroupBox("device.json（不参与版本比对）", self)
         device_json_form = QFormLayout(device_json_group)
-        factory_dl_edit = QLineEdit(self)
-        factory_dl_edit.setPlaceholderText("factoryDownloadVersion，如 V1.1.0-5~20260508152452")
-        factory_in_edit = QLineEdit(self)
-        factory_in_edit.setPlaceholderText("factoryInstallVersion，如 V1.1.0-5~20260508152452")
+        enc_dl_edit = QLineEdit(self)
+        enc_dl_edit.setPlaceholderText("S100 已加密 factoryDownloadVersion")
+        enc_in_edit = QLineEdit(self)
+        enc_in_edit.setPlaceholderText("S100 已加密 factoryInstallVersion")
+        plain_dl_edit = QLineEdit(self)
+        plain_dl_edit.setPlaceholderText("S100 未加密 factoryDownloadVersion")
+        plain_in_edit = QLineEdit(self)
+        plain_in_edit.setPlaceholderText("S100 未加密 factoryInstallVersion")
         self._device_json_edits = {
-            "factory_download_version": factory_dl_edit,
-            "factory_install_version": factory_in_edit,
+            "encrypted_factory_download_version": enc_dl_edit,
+            "encrypted_factory_install_version": enc_in_edit,
+            "not_encrypted_factory_download_version": plain_dl_edit,
+            "not_encrypted_factory_install_version": plain_in_edit,
         }
-        device_json_form.addRow("出厂下载版本:", factory_dl_edit)
-        device_json_form.addRow("出厂安装版本:", factory_in_edit)
+        device_json_form.addRow("已加密-下载:", enc_dl_edit)
+        device_json_form.addRow("已加密-安装:", enc_in_edit)
+        device_json_form.addRow("未加密-下载:", plain_dl_edit)
+        device_json_form.addRow("未加密-安装:", plain_in_edit)
         layout.addWidget(device_json_group)
 
         self.buttons = QDialogButtonBox(
@@ -346,15 +361,28 @@ class VersionConfigDialog(QDialog):
                 if version_item is None:
                     continue
                 edits["sw_version"].setText(str(getattr(version_item, "sw_version", "") or ""))
+                compat_edit = edits.get("sw_version_compat")
+                if compat_edit is not None:
+                    compat_edit.setText(str(getattr(version_item, "sw_version_compat", "") or ""))
 
             device_json_item = getattr(config, "device_json", None)
             if device_json_item is not None:
-                self._device_json_edits["factory_download_version"].setText(
-                    str(getattr(device_json_item, "factory_download_version", "") or "")
-                )
-                self._device_json_edits["factory_install_version"].setText(
-                    str(getattr(device_json_item, "factory_install_version", "") or "")
-                )
+                enc_pair = getattr(device_json_item, "encrypted", None)
+                if enc_pair is not None:
+                    self._device_json_edits["encrypted_factory_download_version"].setText(
+                        str(getattr(enc_pair, "factory_download_version", "") or "")
+                    )
+                    self._device_json_edits["encrypted_factory_install_version"].setText(
+                        str(getattr(enc_pair, "factory_install_version", "") or "")
+                    )
+                plain_pair = getattr(device_json_item, "not_encrypted", None)
+                if plain_pair is not None:
+                    self._device_json_edits["not_encrypted_factory_download_version"].setText(
+                        str(getattr(plain_pair, "factory_download_version", "") or "")
+                    )
+                    self._device_json_edits["not_encrypted_factory_install_version"].setText(
+                        str(getattr(plain_pair, "factory_install_version", "") or "")
+                    )
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "警告", f"加载版本配置失败: {exc}")
 
@@ -454,16 +482,36 @@ class VersionConfigDialog(QDialog):
                 if version_item is None:
                     raise RuntimeError(f"{key} 版本配置不存在")
                 version_item.sw_version = edits["sw_version"].text().strip()
+                if "sw_version_compat" in edits:
+                    version_item.sw_version_compat = edits["sw_version_compat"].text().strip()
 
             device_json_item = getattr(config, "device_json", None)
             if device_json_item is None:
                 raise RuntimeError("device_json 配置不存在")
-            device_json_item.factory_download_version = (
-                self._device_json_edits["factory_download_version"].text().strip()
-            )
-            device_json_item.factory_install_version = (
-                self._device_json_edits["factory_install_version"].text().strip()
-            )
+            enc_pair = getattr(device_json_item, "encrypted", None)
+            if enc_pair is not None:
+                enc_pair.factory_download_version = (
+                    self._device_json_edits["encrypted_factory_download_version"]
+                    .text()
+                    .strip()
+                )
+                enc_pair.factory_install_version = (
+                    self._device_json_edits["encrypted_factory_install_version"]
+                    .text()
+                    .strip()
+                )
+            plain_pair = getattr(device_json_item, "not_encrypted", None)
+            if plain_pair is not None:
+                plain_pair.factory_download_version = (
+                    self._device_json_edits["not_encrypted_factory_download_version"]
+                    .text()
+                    .strip()
+                )
+                plain_pair.factory_install_version = (
+                    self._device_json_edits["not_encrypted_factory_install_version"]
+                    .text()
+                    .strip()
+                )
 
             self._config_service.save(config)
             QMessageBox.information(self, "保存成功", "版本配置已保存")

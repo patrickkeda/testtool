@@ -27,7 +27,8 @@ class ScanSNDialog(QDialog):
     
     def __init__(self, parent=None, title="扫描/输入产品SN", hint="请用扫码枪扫描或手动输入后回车",
                  regex="^[A-Z0-9_-]{6,64}$", timeout_ms=60000, port="PortA", main_window=None,
-                 force_english_keyboard: bool = True):
+                 force_english_keyboard: bool = True,
+                 restore_chinese_keyboard: bool = True):
         super().__init__(parent)
         self.title = title
         self.hint = hint
@@ -37,6 +38,7 @@ class ScanSNDialog(QDialog):
         self.main_window = main_window
         self.sn_result = None
         self._force_english_keyboard = bool(force_english_keyboard)
+        self._restore_chinese_keyboard = bool(restore_chinese_keyboard)
 
         # 设置窗口标题，明确标明端口
         self.setWindowTitle(f"{title} - {port}")
@@ -119,6 +121,20 @@ class ScanSNDialog(QDialog):
             self.sn_input.activateWindow()
         except Exception:
             pass
+
+    def _restore_chinese_input_if_needed(self) -> None:
+        if self._force_english_keyboard and self._restore_chinese_keyboard:
+            try:
+                from ...libs.common.input_locale import activate_chinese_keyboard_layout
+
+                activate_chinese_keyboard_layout()
+            except Exception:
+                pass
+
+    def done(self, result: int) -> None:
+        """对话框结束（确定/取消/关闭）后恢复中文输入法。"""
+        self._restore_chinese_input_if_needed()
+        super().done(result)
         
     def setup_timer(self):
         """设置超时定时器"""
@@ -291,6 +307,9 @@ class ScanSNStep(BaseStep):
         - timeout_ms: 超时时间(毫秒) (默认 60000)
         - allow_manual: 是否允许手动输入 (默认 True)
         - force_english_keyboard: 弹出对话框时是否尝试切换到英文键盘布局（仅 Windows，默认 True）
+        - restore_chinese_keyboard: 对话框关闭后是否恢复简体中文布局（默认 True）
+        - context_key: 非空时将输入值写入上下文该键（如 imei、scramble），便于后续 ${imei} 引用
+        - set_sn: 是否同时写入 SN 上下文（默认 True；仅采集 IMEI/扰码等非 SN 字段时可设为 false）
         """
         try:
             # 1) 读取参数
@@ -300,6 +319,11 @@ class ScanSNStep(BaseStep):
             timeout_ms = int(params.get("timeout_ms", 60000))
             allow_manual = bool(params.get("allow_manual", True))
             force_english_keyboard = self.get_param_bool(params, "force_english_keyboard", True)
+            restore_chinese_keyboard = self.get_param_bool(
+                params, "restore_chinese_keyboard", True
+            )
+            context_key = str(params.get("context_key", "") or "").strip()
+            set_sn = self.get_param_bool(params, "set_sn", True)
 
             ctx.log_info(f"开始SN扫描测试: 标题='{dialog_title}', 超时={timeout_ms}ms")
             
@@ -326,6 +350,7 @@ class ScanSNStep(BaseStep):
                 port=ctx.port,
                 main_window=main_window,
                 force_english_keyboard=force_english_keyboard,
+                restore_chinese_keyboard=restore_chinese_keyboard,
             )
             
             if accepted:
@@ -335,16 +360,22 @@ class ScanSNStep(BaseStep):
                 is_valid, error_msg = validate_sn_format(sn, regex)
                 
                 if is_valid:
-                    # 5) 保存SN到上下文
-                    ctx.set_sn(sn)
-                    ctx.log_info(f"SN验证通过: {sn}")
+                    # 5) 保存到上下文
+                    if set_sn:
+                        ctx.set_sn(sn)
+                    if context_key:
+                        ctx.set_data(context_key, sn)
+                        ctx.log_info(f"已写入上下文变量 {context_key}={sn}")
+                    ctx.log_info(f"输入验证通过: {sn}")
                     
                     # 6) 构建成功结果
                     result_data = {
                         "sn": sn,
                         "regex": regex,
-                        "input_method": "manual" if allow_manual else "scanner"
+                        "input_method": "manual" if allow_manual else "scanner",
                     }
+                    if context_key:
+                        result_data[context_key] = sn
                     
                     message = f"SN扫描成功: {sn}"
                     return self.create_success_result(result_data, message)

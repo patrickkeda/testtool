@@ -198,19 +198,49 @@ class ProductDualVersionConfig(BaseModel):
 
 class ProductSingleVersionConfig(BaseModel):
     sw_version: str = Field("", description="软件版本号")
+    sw_version_compat: str = Field(
+        "",
+        description="兼容软件版本号（可选；与 sw_version 任一匹配即通过）",
+    )
 
 
-class DeviceJsonVersionConfig(BaseModel):
-    """device.json 中 factoryDownloadVersion / factoryInstallVersion。"""
+class DeviceJsonFactoryVersionPair(BaseModel):
+    """一组 factoryDownloadVersion / factoryInstallVersion。"""
 
     factory_download_version: str = Field(
-        "",
+        "V1.1.0-5~20260508152452",
         description="device.json factoryDownloadVersion",
     )
     factory_install_version: str = Field(
-        "",
+        "V1.1.0-5~20260508152452",
         description="device.json factoryInstallVersion",
     )
+
+
+class DeviceJsonVersionConfig(BaseModel):
+    """device.json 出厂版本：仅已加密 / 未加密两套，无默认回退。"""
+
+    encrypted: DeviceJsonFactoryVersionPair = Field(
+        default_factory=DeviceJsonFactoryVersionPair,
+        description="S100 已加密（lifecycle=4）",
+    )
+    not_encrypted: DeviceJsonFactoryVersionPair = Field(
+        default_factory=DeviceJsonFactoryVersionPair,
+        description="S100 未加密",
+    )
+
+
+class OtaVersionConfig(BaseModel):
+    """OTA 升级包文件名应包含的版本特征串（配置 → 版本配置 → OTA 版本）。"""
+
+    S100: ProductDualVersionConfig = Field(default_factory=ProductDualVersionConfig)
+    X5: ProductDualVersionConfig = Field(default_factory=ProductDualVersionConfig)
+
+    @validator("S100", "X5", pre=True)
+    def _coerce_ota_app_version_fields(cls, value):  # noqa: N805
+        if isinstance(value, str):
+            return {"app_version": value, "sys_version": ""}
+        return value
 
 
 class VersionConfig(BaseModel):
@@ -251,6 +281,10 @@ class SshConfig(BaseModel):
         "",
         description="SFTP/ssh_exec 上传用本地脚本路径；非空时运行序列会覆盖变量 pvt_script_path（如 PVT 序列）",
     )
+    burnin_data_save_dir: str = Field(
+        "",
+        description="煲机 SFTP 拉取数据的本机父目录；非空时覆盖序列变量 pvt_ota_pull_local_parent；空则使用用户 Downloads",
+    )
 
 
 class PrinterConfig(BaseModel):
@@ -286,6 +320,10 @@ class RootConfig(BaseModel):
     mes: MesConfig = Field(default_factory=MesConfig)
     printer: PrinterConfig = Field(default_factory=PrinterConfig)
     versions: VersionConfig = Field(default_factory=VersionConfig)
+    ota_version: OtaVersionConfig = Field(
+        default_factory=OtaVersionConfig,
+        description="OTA 升级包 zip 文件名需包含的 app/sys 版本特征串",
+    )
     device_json: DeviceJsonVersionConfig = Field(
         default_factory=DeviceJsonVersionConfig,
         description="仅用于生成 device.json，不参与 version=0 版本比对",

@@ -1,0 +1,151 @@
+version: '1.0'
+metadata:
+  name: vita-ota-deploy
+  description: 'VITA S100+X5 全自动 OTA（复用 ota_deploy_gui 逻辑）'
+  author: 'TestTool'
+  created_at: '2026-05-24T00:00:00.000000'
+  product: Vita01
+  station: OTA
+  version: '1.0'
+
+# 使用前请修改 variables：
+#   ota_manifest_encrypted / ota_manifest_plain — 加密、未加密 manifest 完整路径（推荐）
+#   ota_package_dir — zip 与 manifest 所在目录；未配 manifest 路径时才会在目录内自动发现
+#   manifest packages[].filename 与 zip 放在 manifest 同目录即可自动解析四个包路径
+#   或分别填写 s100_app_path / s100_sys_path / x5_app_path / x5_sys_path
+#
+# OTA 包版本：菜单「配置 → OTA 版本」中填写（config.yaml → ota_version），
+#   与「配置 → 版本」整机 version=0 比对无关；本序列会校验 zip 文件名是否包含 app/sys 特征串。
+#
+# 认证：默认 root/root；产线建议配置「测试站 → 私钥配置」，并设 ota_use_key: true
+#
+# ota_use_tmux + ota_wait_tmux：与 GUI「Tmux 后台」一致；提交后 SSH 轮询设备版本直至与 config.yaml ota_version 一致
+# 判定通过：cat /app/version_info.txt (VERSION=) 与 cat /etc/version 匹配「配置 → OTA 版本」中的 app/sys 特征串
+# ota_use_tmux: false：前台执行 ota_tool 后同样做 SSH 版本校验
+
+variables:
+  robot_ip: '192.168.126.2'
+  x5_ip: '192.168.127.10'
+  # 本机 OTA 包目录（留空则必须在下方写齐四个包路径）
+  ota_package_dir: 'D:/ota_packages'
+  # lifecycle 双板选包：分别指定加密 / 未加密 manifest（zip 与 manifest 同目录）
+  ota_manifest_encrypted: ''
+  ota_manifest_plain: ''
+  s100_app_path: ''
+  s100_sys_path: ''
+  x5_app_path: ''
+  x5_sys_path: ''
+  ota_target_s100: true
+  ota_target_x5: true
+  ota_use_key: true
+  ota_use_tmux: true
+  ota_wait_tmux: true
+  ota_wait_timeout_sec: 1500
+  ota_connect_timeout: 30
+
+steps:
+  - id: step_scan_sn
+    name: ScanSN
+    type: scan.sn
+    params:
+      dialog_title: '扫描 SN（OTA）'
+      hint: '请扫描 19 位 SN 后回车'
+      regex: '^[A-Za-z0-9]{19}$'
+      timeout_ms: 120000
+    timeout: 125000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_check_ota_packages
+    name: CheckOtaPackages
+    type: case.check_ota_packages
+    params:
+      config_path: Config/config.yaml
+      package_dir: '${ota_package_dir}'
+      s100_app_path: '${s100_app_path}'
+      s100_sys_path: '${s100_sys_path}'
+      x5_app_path: '${x5_app_path}'
+      x5_sys_path: '${x5_sys_path}'
+      ota_target_s100: '${ota_target_s100}'
+      ota_target_x5: '${ota_target_x5}'
+    timeout: 60000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_ping_s100
+    name: PingS100
+    type: utility.ping_host
+    params:
+      host: '${robot_ip}'
+      count: 2
+      timeout_sec: 3
+    timeout: 20000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_ota_deploy
+    name: OtaDeploy
+    type: utility.run_python_script
+    params:
+      script: client/vita_engineer_client/ota_deploy_headless.py
+      private_key_file: '${ssh_private_key_path}'
+      args:
+        - '--sn'
+        - '${sn}'
+        - '--s100-ip'
+        - '${robot_ip}'
+        - '--x5-ip'
+        - '${x5_ip}'
+        - '--package-dir'
+        - '${ota_package_dir}'
+        - '--manifest-encrypted'
+        - '${ota_manifest_encrypted}'
+        - '--manifest-plain'
+        - '${ota_manifest_plain}'
+        - '--s100-app'
+        - '${s100_app_path}'
+        - '--s100-sys'
+        - '${s100_sys_path}'
+        - '--x5-app'
+        - '${x5_app_path}'
+        - '--x5-sys'
+        - '${x5_sys_path}'
+        - '--identity-file'
+        - '${ssh_private_key_path}'
+        - '--use-key-auth'
+        - '${ota_use_key}'
+        - '--target-s100'
+        - '${ota_target_s100}'
+        - '--target-x5'
+        - '${ota_target_x5}'
+        - '--use-tmux'
+        - '${ota_use_tmux}'
+        - '--wait-tmux'
+        - '${ota_wait_tmux}'
+        - '--connect-timeout'
+        - '${ota_connect_timeout}'
+        - '--wait-timeout-sec'
+        - '${ota_wait_timeout_sec}'
+    timeout: 7300000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null

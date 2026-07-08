@@ -44,11 +44,16 @@ from .steps.cases.pcan import (
     PcanEnableMotorStep,
     PcanSetAutoReportStep,
     PcanMoveWithTorqueLogStep,
+    PcanMoveUntilLimitStep,
+    PcanReadMotorStatusStep,
     PcanDisconnectStep,
 )
 from .steps.cases.create_device_json import CreateDeviceJsonStep
 from .steps.cases.compare_version import CompareVersionStep
+from .steps.cases.check_ota_packages import CheckOtaPackagesStep
 from .steps.cases.compare_efuse_sn import CompareEfuseSnStep
+from .steps.cases.probe_s100_provision import ProbeS100ProvisionStep
+from .steps.cases.check_diagnostic_fault import CheckDiagnosticFaultStep
 from .steps.cases.mes_steps import MESHeartbeatStep, MESGetWorkOrderStep, MESUploadResultStep
 from .steps.cases.zebra_printer import ZebraPrintStep, ZebraImagePrintStep
 from .steps.cases.ssh_exec import SshExecStep
@@ -296,6 +301,18 @@ def register_all_steps():
     )
 
     register(
+        step_type="pcan.move_until_limit",
+        step_class=PcanMoveUntilLimitStep,
+        aliases=["pcan_move_until_limit", "pcan.move_until_sensor", "pcan.siyue_motion"],
+    )
+
+    register(
+        step_type="pcan.read_motor_status",
+        step_class=PcanReadMotorStatusStep,
+        aliases=["pcan_read_motor_status", "pcan.motor_status"],
+    )
+
+    register(
         step_type="pcan.disconnect",
         step_class=PcanDisconnectStep,
         aliases=["pcan_disconnect", "disconnect_pcan"],
@@ -315,9 +332,27 @@ def register_all_steps():
     )
 
     register(
+        step_type="case.check_ota_packages",
+        step_class=CheckOtaPackagesStep,
+        aliases=["check_ota_packages", "ota_package_check", "check_ota_version"],
+    )
+
+    register(
         step_type="case.compare_efuse_sn",
         step_class=CompareEfuseSnStep,
         aliases=["compare_efuse_sn", "efuse_sn_compare", "check_efuse_sn"],
+    )
+
+    register(
+        step_type="case.probe_s100_provision",
+        step_class=ProbeS100ProvisionStep,
+        aliases=["probe_s100_provision", "s100_provision_probe", "check_s100_encrypted_probe"],
+    )
+
+    register(
+        step_type="case.check_diagnostic_fault",
+        step_class=CheckDiagnosticFaultStep,
+        aliases=["check_diagnostic_fault", "diagnostic_fault_check", "check_s100_diagnostic"],
     )
 
     register(

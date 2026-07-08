@@ -1,0 +1,207 @@
+version: '1.0'
+metadata:
+  name: vita-s100-provision
+  description: 'S100 加密校验；未加密则 provisioning，已加密则直接通过'
+  author: 'TestTool'
+  created_at: '2026-05-25T00:00:00.000000'
+  product: Vita01
+  station: S100_PROVISION
+  version: '1.0'
+
+# 流程：
+#   1. 探测 S100 lifecycle（退出码 4 = 已加密）
+#   2. 未加密：provision_step=1 → 50s → provision_step=2 → 110s → enfac
+#   3. 最终加密校验（必须 lifecycle=4）
+#
+# 认证：「配置 → 测试站 → 私钥」；provision 脚本 SSH 见 provision_common.py 中 S100_IP。
+
+variables:
+  robot_ip: '192.168.126.2'
+  robot_port: 3579
+
+steps:
+  - id: step_scan_sn
+    name: ScanSN
+    type: scan.sn
+    params:
+      dialog_title: '扫描 SN（S100 加密）'
+      hint: '请扫描 19 位 SN 后回车'
+      regex: '^[A-Za-z0-9]{19}$'
+      timeout_ms: 120000
+    timeout: 125000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_ping_s100
+    name: PingS100
+    type: utility.ping_host
+    params:
+      host: '${robot_ip}'
+      count: 2
+      timeout_sec: 3
+    timeout: 20000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_enter_engineer
+    name: EnterEngineerMode
+    type: engineer.test
+    params:
+      command: 'enfac=1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_probe_s100_provision
+    name: ProbeS100Provision
+    type: case.probe_s100_provision
+    params:
+      host: '${robot_ip}'
+      username: root
+      port: 22
+      private_key_file: '${ssh_private_key_path}'
+      strict_host_key: false
+      connect_timeout: 25
+      exec_timeout: 30
+    timeout: 45000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_provision_step1
+    name: ProvisionStep1
+    type: engineer.test
+    params:
+      command: 'provision_step=1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: '${s100_need_provision}'
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_delay_after_prov1
+    name: DelayAfterProvisionStep1
+    type: utility.delay
+    params:
+      duration_ms: 50000
+    timeout: 55000
+    retries: 0
+    condition: '${s100_need_provision}'
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_provision_step2
+    name: ProvisionStep2
+    type: engineer.test
+    params:
+      command: 'provision_step=2%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: '${s100_need_provision}'
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_delay_after_prov2
+    name: DelayAfterProvisionStep2
+    type: utility.delay
+    params:
+      duration_ms: 110000
+    timeout: 115000
+    retries: 0
+    condition: '${s100_need_provision}'
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_enter_factory_after_prov
+    name: EnterFactoryMode
+    type: engineer.test
+    params:
+      command: 'enfac=1,1%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: '${s100_need_provision}'
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  - id: step_verify_s100_encrypted
+    name: VerifyS100Encrypted
+    type: utility.ssh_exec
+    params:
+      host: '${robot_ip}'
+      username: root
+      port: 22
+      private_key_file: '${ssh_private_key_path}'
+      command: >-
+        bash -lc 'chmod 777 /usr/hobot/bin/provision_tool;
+        /usr/hobot/bin/provision_tool --get-lifecycle;
+        rc=$?;
+        if [ "$rc" -eq 4 ]; then
+          echo "S100 lifecycle=4 (LIFECYCLE_OHP, encrypted) OK";
+          exit 0;
+        else
+          echo "S100 未加密或 lifecycle 异常, exit=$rc (期望 4)" >&2;
+          exit 1;
+        fi'
+      strict_host_key: false
+      expect_zero_exit: true
+      connect_timeout: 25
+      exec_timeout: 30
+      keepalive_sec: 10
+    timeout: 45000
+    retries: 2
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+timeout: null
+retries: 0
+on_failure: stop

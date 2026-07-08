@@ -34,6 +34,7 @@ variables:
   motion_min_speed: 0.15  # 动作期间 |速度| 峰值下限 (rad/s)
   motion_min_feedback: 20 # 至少收到的 0x01 反馈条数
   motion_min_torque: 0.0    # 扭矩峰值下限 (Nm)，0 表示不检查
+  motor_status_collect_ms: 500  # pcan.read_motor_status 采集 0x01 反馈时长 (ms)
 
 steps:
   # 步骤0: MES初始化（MesInit）
@@ -224,6 +225,25 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
+  # 步骤8.2: 读取 0x01 上报温度与电机报警（使能后、动作前）
+  - id: step_8_2
+    name: ReadMotorTempBeforeMotion
+    type: pcan.read_motor_status
+    params:
+      motor_id: ${motor_id}
+      collect_ms: ${motor_status_collect_ms}
+      fail_on_alarm: true
+      require_feedback: true
+      min_feedback_count: 1
+    timeout: 15000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
   # 步骤9: 伸腿动作，并记录扭矩生成日志
   - id: step_9
     name: ExtendLegWithTorqueLog
@@ -264,6 +284,25 @@ steps:
       min_feedback_count: ${motion_min_feedback}
       min_torque_nm: ${motion_min_torque}
     timeout: 60000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+    at_config: null
+    state_measurement_config: null
+    manual_judgment_config: null
+
+  # 步骤10.1: 动作结束后再次读取温度与报警
+  - id: step_10_1
+    name: ReadMotorTempAfterMotion
+    type: pcan.read_motor_status
+    params:
+      motor_id: ${motor_id}
+      collect_ms: ${motor_status_collect_ms}
+      fail_on_alarm: true
+      require_feedback: true
+      min_feedback_count: 1
+    timeout: 15000
     retries: 1
     condition: null
     expect: null

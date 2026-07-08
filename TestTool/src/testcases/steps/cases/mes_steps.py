@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from ...base import BaseStep, StepResult
 from ...context import Context
@@ -332,11 +332,93 @@ class MESUploadResultStep(_MESMixin, BaseStep):
         return False
 
     @staticmethod
-    def _infer_overall_from_context(ctx: Context) -> str:
-        """从上下文中的步骤结果推导总结果。"""
+    def _parse_step_id_list(raw: Any) -> Set[str]:
+        if raw is None:
+            return set()
+        if isinstance(raw, str):
+            return {s.strip() for s in raw.split(",") if s.strip()}
+        if isinstance(raw, (list, tuple)):
+            return {str(x).strip() for x in raw if str(x).strip()}
+        return set()
+
+    @staticmethod
+    def _state_key_step_id(key: str) -> str:
+        k = str(key)
+        if k.endswith("_result"):
+            return k[: -len("_result")]
+        if k.endswith("_passed"):
+            return k[: -len("_passed")]
+        return k
+
+    @staticmethod
+    def _state_entry_skipped_for_overall(key: str, non_fatal_step_ids: Set[str]) -> bool:
+        if not non_fatal_step_ids:
+            return False
+        sid = MESUploadResultStep._state_key_step_id(key)
+        return sid in non_fatal_step_ids
+
+    @staticmethod
+    def _overall_from_burnin(ctx: Context, context_key: str) -> Optional[str]:
+        oc = str(ctx.get_data(context_key) or "").strip().lower()
+        if oc == "ok":
+            return "PASS"
+        if oc == "abnormal":
+            return "FAIL"
+        return None
+
+    @staticmethod
+    def _step_failed_in_context(
+        ctx: Context,
+        step_id: str,
+        *,
+        missing_means_failed: bool = False,
+    ) -> bool:
+        try:
+            result = ctx.get_result(step_id)
+            if result is not None:
+                return MESUploadResultStep._is_failed_result_obj(result)
+            passed_flag = ctx.get_data(f"{step_id}_passed")
+            if passed_flag is not None:
+                return not bool(passed_flag)
+            state = getattr(ctx, "state", {}) or {}
+            for key, value in state.items():
+                sid = MESUploadResultStep._state_key_step_id(str(key))
+                if sid != step_id:
+                    continue
+                if str(key).endswith("_passed"):
+                    return not bool(value)
+                if MESUploadResultStep._is_failed_result_obj(value):
+                    return True
+                if hasattr(value, "passed") or isinstance(value, dict):
+                    return False
+        except Exception:  # noqa: BLE001
+            pass
+        return missing_means_failed
+
+    @staticmethod
+    def _any_required_step_failed(ctx: Context, required_step_ids: Set[str]) -> bool:
+        if not required_step_ids:
+            return False
+        return any(
+            MESUploadResultStep._step_failed_in_context(
+                ctx, sid, missing_means_failed=True
+            )
+            for sid in required_step_ids
+        )
+
+    @staticmethod
+    def _infer_overall_from_context(
+        ctx: Context,
+        *,
+        non_fatal_step_ids: Optional[Set[str]] = None,
+    ) -> str:
+        """从上下文中的步骤结果推导总结果；non_fatal 步骤失败不计入 FAIL。"""
+        skip_ids = non_fatal_step_ids or set()
         try:
             state = getattr(ctx, "state", {}) or {}
-            for value in state.values():
+            for key, value in state.items():
+                if MESUploadResultStep._state_entry_skipped_for_overall(key, skip_ids):
+                    continue
                 if MESUploadResultStep._is_failed_result_obj(value):
                     return "FAIL"
         except Exception:  # noqa: BLE001
@@ -344,15 +426,29 @@ class MESUploadResultStep(_MESMixin, BaseStep):
         return "PASS"
 
     @staticmethod
-    def _infer_error_from_context(ctx: Context) -> str:
-        """从上下文中的步骤结果提取首个失败原因。"""
+    def _infer_error_from_context(
+        ctx: Context,
+        *,
+        only_step_ids: Optional[Set[str]] = None,
+        exclude_step_ids: Optional[Set[str]] = None,
+    ) -> str:
+        """从上下文提取失败原因；可限定/排除步骤 ID。"""
+        only = only_step_ids or set()
+        exclude = exclude_step_ids or set()
         try:
             state = getattr(ctx, "state", {}) or {}
             for key, value in state.items():
+                sid = MESUploadResultStep._state_key_step_id(key)
+                if only and sid not in only:
+                    continue
+                if exclude and sid in exclude:
+                    continue
                 if MESUploadResultStep._is_failed_result_obj(value):
-                    msg = str(getattr(value, "error", "") or getattr(value, "message", "") or "").strip()
+                    msg = str(
+                        getattr(value, "error", "") or getattr(value, "message", "") or ""
+                    ).strip()
                     if msg:
-                        return f"{key}: {msg}"
+                        return f"{sid}: {msg}"
         except Exception:  # noqa: BLE001
             pass
         return ""
@@ -392,20 +488,53 @@ class MESUploadResultStep(_MESMixin, BaseStep):
                 return self.create_failure_result("已取消MES上传", error="USER_CANCELLED")
             overall = choice
         else:
+            non_fatal_ids = self._parse_step_id_list(
+                params.get("non_fatal_step_ids") or params.get("ignore_failure_step_ids")
+            )
+            burnin_key = str(
+                params.get("burnin_outcome_context_key", "pvt_hub_burnin_outcome")
+                or "pvt_hub_burnin_outcome"
+            ).strip()
+            overall_source = str(params.get("overall_result_source", "") or "").strip().lower()
             raw_overall = str(params.get("overall_result", "PASS") or "PASS").strip()
-            if raw_overall in ("${context.result}", "${result}"):
-                overall = self._infer_overall_from_context(ctx)
+            required_ids = self._parse_step_id_list(
+                params.get("required_pass_step_ids") or params.get("must_pass_step_ids")
+            )
+
+            if overall_source == "burnin":
+                burnin_overall = self._overall_from_burnin(ctx, burnin_key)
+                if burnin_overall:
+                    overall = burnin_overall
+                    if overall == "PASS" and required_ids:
+                        if self._any_required_step_failed(ctx, required_ids):
+                            overall = "FAIL"
+                            ctx.log_warning(
+                                "煲机无异常，但必备步骤（如数据导出）未通过，MesEnd 上报 FAIL"
+                            )
+                else:
+                    ctx.log_warning(
+                        f"上下文无有效 {burnin_key}，MesEnd 改按步骤结果推导 overall"
+                    )
+                    overall = self._infer_overall_from_context(
+                        ctx, non_fatal_step_ids=non_fatal_ids
+                    )
+            elif raw_overall in ("${context.result}", "${result}"):
+                overall = self._infer_overall_from_context(
+                    ctx, non_fatal_step_ids=non_fatal_ids
+                )
             else:
                 overall = raw_overall.upper()
 
-        if overall not in {"PASS", "FAIL", "SKIP", "ERROR"}:
-            # 兼容未解析占位符等无效值，按上下文推导
-            overall = self._infer_overall_from_context(ctx)
-        elif overall == "PASS":
-            # 防止误配导致失败结果被上报为 PASS：上下文存在失败时强制 FAIL
-            inferred = self._infer_overall_from_context(ctx)
-            if inferred == "FAIL":
-                overall = "FAIL"
+            if overall not in {"PASS", "FAIL", "SKIP", "ERROR"}:
+                overall = self._infer_overall_from_context(
+                    ctx, non_fatal_step_ids=non_fatal_ids
+                )
+            elif overall == "PASS" and overall_source != "burnin":
+                inferred = self._infer_overall_from_context(
+                    ctx, non_fatal_step_ids=non_fatal_ids
+                )
+                if inferred == "FAIL":
+                    overall = "FAIL"
 
         station_id = self._resolve_upload_station_id(ctx, params)
         port = str(params.get("port", "") or getattr(ctx, "port", "") or "PortA")
@@ -422,10 +551,44 @@ class MESUploadResultStep(_MESMixin, BaseStep):
             or ""
         )
         raw_error_message = str(params.get("error_message", "") or "").strip()
+        non_fatal_ids = self._parse_step_id_list(
+            params.get("non_fatal_step_ids") or params.get("ignore_failure_step_ids")
+        )
         if raw_error_message in ("${context.error_message}", "${error_message}"):
-            error_message = self._infer_error_from_context(ctx)
+            error_message = self._infer_error_from_context(
+                ctx, exclude_step_ids=non_fatal_ids
+            )
         else:
             error_message = raw_error_message
+
+        if non_fatal_ids:
+            aux = self._infer_error_from_context(ctx, only_step_ids=non_fatal_ids)
+            if aux:
+                prefix = "煲机无异常" if overall == "PASS" else "煲机异常"
+                note = f"{prefix}；非致命步骤失败: {aux}"
+                error_message = note if not error_message else f"{error_message}; {note}"
+                ctx.log_warning(note)
+
+        required_ids = self._parse_step_id_list(
+            params.get("required_pass_step_ids") or params.get("must_pass_step_ids")
+        )
+        if required_ids and self._any_required_step_failed(ctx, required_ids):
+            req_err = self._infer_error_from_context(ctx, only_step_ids=required_ids)
+            burnin_oc = str(
+                ctx.get_data(
+                    str(
+                        params.get("burnin_outcome_context_key", "pvt_hub_burnin_outcome")
+                        or "pvt_hub_burnin_outcome"
+                    )
+                )
+                or ""
+            ).strip().lower()
+            if burnin_oc == "ok":
+                note = f"煲机无异常；数据未导出成功: {req_err or '必备步骤失败'}"
+            else:
+                note = f"数据导出失败: {req_err or '必备步骤失败'}"
+            error_message = note if not error_message else f"{error_message}; {note}"
+            ctx.log_warning(note)
         # FAIL/ERROR 未显式传入错误描述时，补默认失败原因，避免 MesEnd2 上传空错误信息。
         if not error_message and overall in {"FAIL", "ERROR"}:
             error_message = "测试失败（未提供具体错误信息）"

@@ -20,7 +20,8 @@ metadata:
 # 7) 拔 Hub 人工确认 → utility.delay（hub_countdown_ms，默认 120min；改小如 120000=120s 便于调试）→
 #    倒计时**开始瞬间**写入 ``pvt_hub_countdown_started_at``；「煲机异常」可随时点，「煲机无异常」须倒计时结束后再点（均继续流程）→
 #    写入 ``pvt_hub_burnin_outcome``（ok|abnormal）→ 接回 Hub 确认 → **SSH 停止**压测与 bag →
-#    **SSH 轮询确认进程已停** → SFTP 拉取 → MES 上传
+#    **SSH 轮询确认进程已停** → SFTP 拉取（失败可弹窗补拉，直至成功）→ MES 上传
+# 煲机无异常且 SFTP 成功 → MES PASS；煲机无异常但 SFTP 未成功 → MES FAIL（须在本轮内重试拉取直至成功）。
 #
 # 【注意】pass_regex_disconnect_early=true 时：一旦匹配 pass_on_stdout_regex 即判本步通过并断开 SSH，
 # 远端 bash 内脚本常被终止，板上不会跑满整轮。若要求「脚本在板上跑满再进入 120min」，
@@ -67,7 +68,8 @@ variables:
   pvt_list_remote_dir: '/app'
   # MCAP 等数据目录（与 pvt_stress_test_v4.sh 内 MCAP_RECORD_DIR 默认一致）
   pvt_ota_remote_data_dir: '/ota/pvt_stress_test'
-  # 拉取到本机的父目录；空表示使用当前用户 Downloads（完整路径见进度条与测试日志）
+  # 拉取到本机的父目录；空表示使用「配置 → 测试站 → 煲机数据保存目录」，
+  # 若仍未配置则使用当前用户 Downloads（完整路径见进度条与测试日志）
   pvt_ota_pull_local_parent: ''
 
 steps:
@@ -271,7 +273,9 @@ steps:
       message: >-
         煲机结果已记录（${pvt_hub_burnin_outcome}）。请将 Hub 线重新接好，确保本机能 SSH 连到 ${pvt_ssh_host}。
         点击「确认」后将先通过 SSH 停止远端压测脚本（${pvt_remote_script_basename}）及 ros2 bag 录制，**并轮询确认进程已完全退出**，再从 ${pvt_ota_remote_data_dir} 拉取到本机。
-        保存位置：若未配置 pvt_ota_pull_local_parent，则为当前 Windows 用户的「下载」文件夹（Downloads）下子目录，名称为 SN_倒计时开始时间_煲机结果（ok 或 abnormal）；配置了 pvt_ota_pull_local_parent 则为该路径下同名子文件夹。拉取时会出现进度条并再次显示完整路径。
+        保存位置：在「配置 → 测试站 → 煲机数据保存目录」中填写父路径，或在本序列变量 pvt_ota_pull_local_parent 中填写；
+        均未配置则为当前 Windows 用户的「下载」文件夹（Downloads）下子目录，名称为 SN_倒计时开始时间_煲机结果（ok 或 abnormal）。
+        拉取时会出现进度条并再次显示完整路径。
         拉取成功后删除远端该目录并重建空目录。点「取消」将中止流程。
       confirm_text: '确认'
       cancel_text: '取消'
@@ -352,11 +356,20 @@ steps:
       exec_timeout: 180
       show_pull_progress: true
       pull_progress_title: 'PVT 数据导出'
+      retry_until_success: true
+      retry_delay_sec: 5
+      min_files_downloaded: 1
+      retry_confirm_title: '数据导出失败'
+      retry_confirm_message: |
+        煲机数据拉取失败（网络或 Hub 不稳定）。
+
+        请确认 Hub 已接好、本机可 SSH 连到机器人后，点击「重试拉取」。
+        须在本轮测试内拉取成功方可过站；点击「放弃」则 MES 上报 FAIL。
     timeout: 3600000
     retries: 0
     condition: null
     expect: null
-    on_failure: fail
+    on_failure: continue
     at_config: null
     state_measurement_config: null
     manual_judgment_config: null
@@ -366,7 +379,11 @@ steps:
     type: mes.upload_result
     params:
       prompt_overall_result: false
-      overall_result: '${context.result}'
+      # 煲机无异常 + SFTP 成功 → PASS；任一不满足 → FAIL
+      overall_result_source: burnin
+      burnin_outcome_context_key: pvt_hub_burnin_outcome
+      required_pass_step_ids:
+        - step_pvt_sftp_pull_ota_delete_remote
       error_message: '${context.error_message}'
       use_mes_end: false
     timeout: 15000

@@ -194,8 +194,57 @@ steps:
   at_config: null
   state_measurement_config: null
   manual_judgment_config: null
+- id: step_10_1_fill_light_on
+  name: FillLightOn
+  type: engineer.test
+  params:
+    command: fill_light=1%
+    robot_ip: ${robot_ip}
+    port: ${robot_port}
+    timeout: 30
+  timeout: 35000
+  retries: 1
+  condition: null
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_10_2_fill_light_confirm
+  name: FillLightOnConfirm
+  type: utility.confirm
+  params:
+    title: 补光灯确认
+    message: 请确认补光灯已正常亮起。若未亮请勿继续，并联系工程师。
+    confirm_text: 已亮，确认
+    cancel_text: 未亮
+    allow_cancel: true
+  timeout: 300000
+  retries: 0
+  condition: null
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
+- id: step_10_3_fill_light_off
+  name: FillLightOff
+  type: engineer.test
+  params:
+    command: fill_light=0%
+    robot_ip: ${robot_ip}
+    port: ${robot_port}
+    timeout: 30
+  timeout: 35000
+  retries: 1
+  condition: null
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
 - id: step_11
-  name: StereoVisionDetection
+  name: IRCameraCapture
   type: engineer.test
   params:
     command: ircamera=1%
@@ -210,8 +259,8 @@ steps:
   at_config: null
   state_measurement_config: null
   manual_judgment_config: null
-- id: step_11
-  name: RobotDogReceipt
+- id: step_11b
+  name: RobotDogReceiptBaseline
   type: engineer.test
   params:
     command: tactile=0,0%

@@ -13,7 +13,8 @@ private_key_file
 remote_dir
     远端目录绝对路径（如 ``/ota/pvt_stress_test``）。
 local_parent_dir
-    本机保存父目录；空则使用 ``Path.home() / "Downloads"``。
+    本机保存父目录；空则使用配置 ``ssh.burnin_data_save_dir``（上下文 ``ssh_burnin_data_save_dir``），
+    仍为空则使用 ``Path.home() / "Downloads"``。
 local_dir_name
     在 ``local_parent_dir`` 下创建的子目录名；支持 ``${sn}``、``${pvt_hub_countdown_started_at}`` 等
     （由 worker 在步骤前展开）。缺失的 PVT 常用键会用时间戳 / ``unknown`` / ``UNKNOWN_SN`` 等回退；
@@ -28,6 +29,14 @@ show_pull_progress
     ``用户/Downloads/<local_dir_name>``）。无 Qt 环境或 ``false`` 时跳过弹窗。
 pull_progress_title
     进度条窗口标题（可选）。
+retry_until_success
+    默认 ``false``。为 ``true`` 时导出失败弹出「重试拉取 / 放弃」；选重试则反复拉取直至成功。
+retry_delay_sec
+    每次重试前等待秒数，默认 ``3``。
+min_files_downloaded
+    至少下载文件数；不足则视为失败（默认 ``0``；STRESS 建议 ``1``）。
+retry_confirm_title / retry_confirm_message
+    补拉确认框标题与正文（可选）。
 """
 
 from __future__ import annotations
@@ -36,6 +45,7 @@ import os
 import re
 import shlex
 import stat
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -165,6 +175,160 @@ def _sftp_collect_files(
     return files, n_files, total_b
 
 
+def _execute_sftp_pull(
+    ctx: Context,
+    *,
+    host: str,
+    username: str,
+    port: int,
+    remote_dir: str,
+    dest_dir: Path,
+    delete_after: bool,
+    strict_hk: bool,
+    connect_timeout: int,
+    exec_timeout: int,
+    show_pull_progress: bool,
+    pull_prog_title: str,
+    pkey: Any,
+) -> StepResult:
+    """单次 SFTP 拉取（含可选远端删除）。"""
+    import paramiko
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(
+        paramiko.RejectPolicy() if strict_hk else paramiko.AutoAddPolicy()
+    )
+    progress_opened = False
+    n_files = 0
+    approx_b = 0
+    try:
+        ctx.log_info(f"SFTP 连接 {username}@{host}:{port}，远端目录 {remote_dir}")
+        client.connect(
+            hostname=host,
+            port=port,
+            username=username,
+            pkey=pkey,
+            timeout=connect_timeout,
+            allow_agent=False,
+            look_for_keys=False,
+        )
+        sftp = client.open_sftp()
+        try:
+            try:
+                st = sftp.stat(remote_dir)
+            except OSError as e:
+                return StepResult(
+                    passed=False,
+                    message="远端目录不存在或不可访问",
+                    error=str(e),
+                    data={"remote_dir": remote_dir},
+                )
+            if not stat.S_ISDIR(int(st.st_mode)):
+                return StepResult(
+                    passed=False,
+                    message="remote_dir 不是目录",
+                    error=remote_dir,
+                )
+            entries, n_files, approx_b = _sftp_collect_files(
+                sftp, remote_dir, dest_dir, ctx
+            )
+
+            if show_pull_progress:
+                try:
+                    from src.app.ui_invoker import invoke_sftp_pull_progress_open
+
+                    progress_opened = invoke_sftp_pull_progress_open(
+                        pull_prog_title,
+                        str(dest_dir),
+                        len(entries),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    ctx.log_warning(f"无法显示导出进度条: {exc}")
+                    progress_opened = False
+
+            for i, (rpath, lpath) in enumerate(entries, start=1):
+                lpath.parent.mkdir(parents=True, exist_ok=True)
+                ctx.log_info(f"SFTP get {rpath} -> {lpath}")
+                if progress_opened:
+                    try:
+                        from src.app.ui_invoker import invoke_sftp_pull_progress_update
+
+                        invoke_sftp_pull_progress_update(i, rpath)
+                    except Exception:
+                        pass
+                sftp.get(rpath, str(lpath))
+
+            if not entries and progress_opened:
+                try:
+                    from src.app.ui_invoker import invoke_sftp_pull_progress_update
+
+                    invoke_sftp_pull_progress_update(1, "（远端目录下未发现文件）")
+                except Exception:
+                    pass
+        finally:
+            sftp.close()
+
+        if delete_after:
+            if progress_opened:
+                try:
+                    from src.app.ui_invoker import invoke_sftp_pull_progress_update
+
+                    invoke_sftp_pull_progress_update(
+                        max(n_files, 1),
+                        "正在删除并重建远端目录…",
+                    )
+                except Exception:
+                    pass
+            inner = f"rm -rf {shlex.quote(remote_dir)} && mkdir -p {shlex.quote(remote_dir)}"
+            cmd = "bash -lc " + shlex.quote(inner)
+            ctx.log_info(f"SSH 删除并重建远端目录: {remote_dir}")
+            _si, stdout, stderr = client.exec_command(cmd, timeout=exec_timeout)
+            try:
+                _si.close()
+            except Exception:
+                pass
+            out = (stdout.read() or b"").decode("utf-8", errors="replace").strip()
+            err = (stderr.read() or b"").decode("utf-8", errors="replace").strip()
+            rc = int(stdout.channel.recv_exit_status())
+            if rc != 0:
+                return StepResult(
+                    passed=False,
+                    message="远端删除/重建目录失败",
+                    error=err or out or f"exit {rc}",
+                    data={"remote_dir": remote_dir, "exit_code": rc},
+                )
+
+        return StepResult(
+            passed=True,
+            message=f"已拉取 {n_files} 个文件到 {dest_dir}",
+            data={
+                "local_dir": str(dest_dir),
+                "remote_dir": remote_dir,
+                "files_downloaded": n_files,
+                "approx_bytes": approx_b,
+                "delete_remote_after": delete_after,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        return StepResult(
+            passed=False,
+            message="SFTP/SSH 执行失败",
+            error=str(e),
+        )
+    finally:
+        if progress_opened:
+            try:
+                from src.app.ui_invoker import invoke_sftp_pull_progress_close
+
+                invoke_sftp_pull_progress_close()
+            except Exception:
+                pass
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
 class SshSftpPullDirStep(BaseStep):
     """SFTP 递归拉取远端目录，可选删除远端并重建空目录。"""
 
@@ -197,9 +361,15 @@ class SshSftpPullDirStep(BaseStep):
         else:
             if "${" in parent_raw:
                 ctx.log_warning(
-                    "local_parent_dir 含未解析占位符，改用本机用户 Downloads 目录"
+                    "local_parent_dir 含未解析占位符，改用配置或本机用户 Downloads 目录"
                 )
-            local_parent = Path.home() / "Downloads"
+            cfg_dir = ctx.get_data("ssh_burnin_data_save_dir")
+            cfg_dir_s = str(cfg_dir).strip() if cfg_dir not in (None, "") else ""
+            if cfg_dir_s:
+                local_parent = Path(cfg_dir_s).expanduser()
+                ctx.log_info(f"使用配置 ssh.burnin_data_save_dir 作为本机保存父目录: {local_parent}")
+            else:
+                local_parent = Path.home() / "Downloads"
         local_name_raw = self.get_param_str(params, "local_dir_name", "").strip()
         local_name, name_err = _resolve_local_dir_name(local_name_raw, ctx)
         if name_err:
@@ -249,131 +419,93 @@ class SshSftpPullDirStep(BaseStep):
                 error=str(e),
             )
 
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(
-            paramiko.RejectPolicy() if strict_hk else paramiko.AutoAddPolicy()
-        )
-        progress_opened = False
-        try:
-            ctx.log_info(f"SFTP 连接 {username}@{host}:{port}，远端目录 {remote_dir}")
-            client.connect(
-                hostname=host,
-                port=port,
+        retry_until = self.get_param_bool(params, "retry_until_success", False)
+        retry_delay = max(0, self.get_param_int(params, "retry_delay_sec", 3))
+        min_files = max(0, self.get_param_int(params, "min_files_downloaded", 0))
+        retry_title = self.get_param_str(params, "retry_confirm_title", "数据导出失败")
+        retry_msg_tpl = self.get_param_str(params, "retry_confirm_message", "").strip()
+
+        attempt = 0
+        last_result: Optional[StepResult] = None
+        while True:
+            attempt += 1
+            if attempt > 1:
+                ctx.log_info(f"数据导出第 {attempt} 次尝试")
+
+            pull = _execute_sftp_pull(
+                ctx,
+                host=host,
                 username=username,
+                port=port,
+                remote_dir=remote_dir,
+                dest_dir=dest_dir,
+                delete_after=delete_after,
+                strict_hk=strict_hk,
+                connect_timeout=connect_timeout,
+                exec_timeout=exec_timeout,
+                show_pull_progress=show_pull_progress,
+                pull_prog_title=pull_prog_title,
                 pkey=pkey,
-                timeout=connect_timeout,
-                allow_agent=False,
-                look_for_keys=False,
             )
-            sftp = client.open_sftp()
-            try:
-                try:
-                    st = sftp.stat(remote_dir)
-                except OSError as e:
-                    return self.create_failure_result(
-                        "远端目录不存在或不可访问",
-                        error=str(e),
-                        data={"remote_dir": remote_dir},
+
+            if pull.passed:
+                n_files = 0
+                if isinstance(pull.data, dict):
+                    n_files = int(pull.data.get("files_downloaded") or 0)
+                if min_files > 0 and n_files < min_files:
+                    last_result = self.create_failure_result(
+                        f"远端数据文件不足（{n_files} < {min_files}）",
+                        error="INSUFFICIENT_FILES",
+                        data={
+                            **(pull.data or {}),
+                            "min_files_downloaded": min_files,
+                            "pull_attempts": attempt,
+                        },
                     )
-                if not stat.S_ISDIR(int(st.st_mode)):
-                    return self.create_failure_result(
-                        "remote_dir 不是目录",
-                        error=remote_dir,
+                else:
+                    data = dict(pull.data or {})
+                    if attempt > 1:
+                        data["pull_attempts"] = attempt
+                    return self.create_success_result(
+                        data,
+                        pull.message or f"已拉取 {n_files} 个文件到 {dest_dir}",
                     )
-                entries, n_files, approx_b = _sftp_collect_files(
-                    sftp, remote_dir, dest_dir, ctx
+            else:
+                last_result = self.create_failure_result(
+                    pull.message or "SFTP/SSH 执行失败",
+                    error=pull.error,
+                    data={**(pull.data or {}), "pull_attempts": attempt},
                 )
 
-                if show_pull_progress:
-                    try:
-                        from src.app.ui_invoker import invoke_sftp_pull_progress_open
+            if not retry_until:
+                return last_result
 
-                        progress_opened = invoke_sftp_pull_progress_open(
-                            pull_prog_title,
-                            str(dest_dir),
-                            len(entries),
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        ctx.log_warning(f"无法显示导出进度条: {exc}")
-                        progress_opened = False
-
-                for i, (rpath, lpath) in enumerate(entries, start=1):
-                    lpath.parent.mkdir(parents=True, exist_ok=True)
-                    ctx.log_info(f"SFTP get {rpath} -> {lpath}")
-                    if progress_opened:
-                        try:
-                            from src.app.ui_invoker import invoke_sftp_pull_progress_update
-
-                            invoke_sftp_pull_progress_update(i, rpath)
-                        except Exception:
-                            pass
-                    sftp.get(rpath, str(lpath))
-
-                if not entries and progress_opened:
-                    try:
-                        from src.app.ui_invoker import invoke_sftp_pull_progress_update
-
-                        invoke_sftp_pull_progress_update(
-                            1, "（远端目录下未发现文件）"
-                        )
-                    except Exception:
-                        pass
-            finally:
-                sftp.close()
-
-            if delete_after:
-                if progress_opened:
-                    try:
-                        from src.app.ui_invoker import invoke_sftp_pull_progress_update
-
-                        invoke_sftp_pull_progress_update(
-                            max(n_files, 1),
-                            "正在删除并重建远端目录…",
-                        )
-                    except Exception:
-                        pass
-                inner = f"rm -rf {shlex.quote(remote_dir)} && mkdir -p {shlex.quote(remote_dir)}"
-                cmd = "bash -lc " + shlex.quote(inner)
-                ctx.log_info(f"SSH 删除并重建远端目录: {remote_dir}")
-                _si, stdout, stderr = client.exec_command(cmd, timeout=exec_timeout)
-                try:
-                    _si.close()
-                except Exception:
-                    pass
-                out = (stdout.read() or b"").decode("utf-8", errors="replace").strip()
-                err = (stderr.read() or b"").decode("utf-8", errors="replace").strip()
-                rc = int(stdout.channel.recv_exit_status())
-                if rc != 0:
-                    return self.create_failure_result(
-                        "远端删除/重建目录失败",
-                        error=err or out or f"exit {rc}",
-                        data={"remote_dir": remote_dir, "exit_code": rc},
-                    )
-
-            return self.create_success_result(
-                {
-                    "local_dir": str(dest_dir),
-                    "remote_dir": remote_dir,
-                    "files_downloaded": n_files,
-                    "approx_bytes": approx_b,
-                    "delete_remote_after": delete_after,
-                },
-                f"已拉取 {n_files} 个文件到 {dest_dir}",
+            err_detail = (pull.error or pull.message or "").strip()
+            msg = retry_msg_tpl or (
+                f"导出失败：{err_detail}\n\n"
+                f"保存目标：{dest_dir}\n\n"
+                "请检查 Hub 连接与网络后点击「重试拉取」（须本轮内成功方可过站）。"
+                "点击「放弃」则 MES 上报 FAIL。"
             )
-        except Exception as e:  # noqa: BLE001
-            return self.create_failure_result(
-                "SFTP/SSH 执行失败",
-                error=str(e),
-            )
-        finally:
-            if progress_opened:
-                try:
-                    from src.app.ui_invoker import invoke_sftp_pull_progress_close
-
-                    invoke_sftp_pull_progress_close()
-                except Exception:
-                    pass
             try:
-                client.close()
-            except Exception:
-                pass
+                from src.app.ui_invoker import invoke_in_gui_confirmation
+
+                again = invoke_in_gui_confirmation(
+                    title=retry_title,
+                    message=msg,
+                    confirm_text="重试拉取",
+                    cancel_text="放弃",
+                    port=str(getattr(ctx, "port", "") or "PortA"),
+                    allow_cancel=True,
+                )
+            except Exception as exc:  # noqa: BLE001
+                ctx.log_warning(f"补拉确认框失败: {exc}")
+                return last_result
+
+            if not again:
+                ctx.log_warning("操作员放弃补拉，数据导出保持失败")
+                return last_result
+
+            if retry_delay > 0:
+                ctx.log_info(f"等待 {retry_delay}s 后重试拉取…")
+                time.sleep(retry_delay)

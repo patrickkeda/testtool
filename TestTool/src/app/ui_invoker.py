@@ -53,6 +53,20 @@ class _UIInvoker(QObject):
         self._sftp_pull_progress_dlg = None
         self._sftp_pull_dest_dir = ""
 
+    def _sftp_progress_dlg_alive(self):
+        dlg = self._sftp_pull_progress_dlg
+        if dlg is None:
+            return None
+        try:
+            from shiboken6 import isValid
+
+            if not isValid(dlg):
+                self._sftp_pull_progress_dlg = None
+                return None
+        except Exception:
+            pass
+        return dlg
+
     @Slot(str, str, int)
     def sftp_pull_progress_open(self, title: str, dest_dir: str, total: int) -> None:
         """SFTP 拉取时显示进度条；须从 GUI 线程或通过 BlockingQueuedConnection 调用。"""
@@ -66,9 +80,12 @@ class _UIInvoker(QObject):
         dlg.setLabelText(f"保存到本机：\n{self._sftp_pull_dest_dir}\n\n准备下载…")
         dlg.setCancelButton(None)
         dlg.setMinimumDuration(0)
-        dlg.setAutoClose(True)
-        dlg.setAutoReset(True)
-        dlg.setRange(0, max(1, int(total)))
+        # 禁用 AutoClose/AutoReset：进度到 maximum 时 Qt 会自动销毁对话框，
+        # 工作线程仍会继续 update/close，导致访问已释放控件而闪退（V5 大 MCAP 拉取常见）。
+        dlg.setAutoClose(False)
+        dlg.setAutoReset(False)
+        file_total = max(1, int(total))
+        dlg.setRange(0, file_total)
         dlg.setValue(0)
         dlg.setWindowModality(Qt.WindowModal)
         dlg.show()
@@ -82,16 +99,20 @@ class _UIInvoker(QObject):
 
     @Slot(int, str)
     def sftp_pull_progress_update(self, current: int, detail: str) -> None:
-        dlg = self._sftp_pull_progress_dlg
+        dlg = self._sftp_progress_dlg_alive()
         if dlg is None:
             return
-        dlg.setValue(min(int(current), dlg.maximum()))
-        base = self._sftp_pull_dest_dir or ""
-        tail = (detail or "").strip()
-        if tail:
-            dlg.setLabelText(f"保存到本机：\n{base}\n\n正在下载：\n{tail}")
-        else:
-            dlg.setLabelText(f"保存到本机：\n{base}\n\n下载中…")
+        try:
+            dlg.setValue(min(int(current), dlg.maximum()))
+            base = self._sftp_pull_dest_dir or ""
+            tail = (detail or "").strip()
+            if tail:
+                dlg.setLabelText(f"保存到本机：\n{base}\n\n正在下载：\n{tail}")
+            else:
+                dlg.setLabelText(f"保存到本机：\n{base}\n\n下载中…")
+        except RuntimeError:
+            self._sftp_pull_progress_dlg = None
+            return
         try:
             app = QApplication.instance()
             if app is not None:
@@ -101,14 +122,17 @@ class _UIInvoker(QObject):
 
     @Slot()
     def sftp_pull_progress_close(self) -> None:
-        dlg = self._sftp_pull_progress_dlg
+        dlg = self._sftp_progress_dlg_alive()
         if dlg is not None:
             try:
                 dlg.setValue(dlg.maximum())
-            except Exception:
+            except RuntimeError:
                 pass
-            dlg.close()
-            dlg.deleteLater()
+            try:
+                dlg.close()
+                dlg.deleteLater()
+            except RuntimeError:
+                pass
         self._sftp_pull_progress_dlg = None
         self._sftp_pull_dest_dir = ""
         try:
@@ -118,7 +142,7 @@ class _UIInvoker(QObject):
         except Exception:
             pass
 
-    @Slot(str, str, str, int, str, bool, result=tuple)
+    @Slot(str, str, str, int, str, bool, bool, result=tuple)
     def show_scan_sn(
         self,
         title: str,
@@ -127,6 +151,7 @@ class _UIInvoker(QObject):
         timeout_ms: int,
         port: str,
         force_english_keyboard: bool,
+        restore_chinese_keyboard: bool,
     ) -> Tuple[bool, str]:
         app = QApplication.instance()
         parent_window = find_testtool_main_window()
@@ -138,6 +163,7 @@ class _UIInvoker(QObject):
             timeout_ms=timeout_ms,
             port=port,
             force_english_keyboard=force_english_keyboard,
+            restore_chinese_keyboard=restore_chinese_keyboard,
         )
         # 应用退出时确保对话框关闭
         try:
@@ -250,6 +276,7 @@ def invoke_in_gui_show_scan_sn(
     main_window=None,
     *,
     force_english_keyboard: bool = True,
+    restore_chinese_keyboard: bool = True,
 ) -> Tuple[bool, str]:
     """在主线程阻塞调用显示ScanSN对话框并返回结果。"""
     print(f"[{port}] UI调用器被调用: title={title}, port={port}")
@@ -292,6 +319,7 @@ def invoke_in_gui_show_scan_sn(
                 port=port,
                 main_window=main_window_local,
                 force_english_keyboard=force_english_keyboard,
+                restore_chinese_keyboard=restore_chinese_keyboard,
             )
             # 应用退出时确保对话框关闭
             try:
@@ -318,8 +346,17 @@ def invoke_in_gui_show_scan_sn(
         class DialogHelper(QObject):
             finished = Signal(bool, str)
             
-            @Slot(str, str, str, int, str, bool)
-            def show_dialog(self, title, hint, regex, timeout_ms, port, force_english_keyboard):
+            @Slot(str, str, str, int, str, bool, bool)
+            def show_dialog(
+                self,
+                title,
+                hint,
+                regex,
+                timeout_ms,
+                port,
+                force_english_keyboard,
+                restore_chinese_keyboard,
+            ):
                 print(f"[{port}] DialogHelper.show_dialog被调用")
                 from PySide6.QtCore import QEventLoop
                 from PySide6.QtWidgets import QDialog
@@ -338,6 +375,7 @@ def invoke_in_gui_show_scan_sn(
                             port=port,
                             main_window=main_window_local,
                             force_english_keyboard=force_english_keyboard,
+                            restore_chinese_keyboard=restore_chinese_keyboard,
                         )
                         try:
                             QApplication.instance().aboutToQuit.connect(dlg.close)
@@ -385,6 +423,7 @@ def invoke_in_gui_show_scan_sn(
             Q_ARG(int, timeout_ms),
             Q_ARG(str, port),
             Q_ARG(bool, force_english_keyboard),
+            Q_ARG(bool, restore_chinese_keyboard),
         )
         
         # 等待结果

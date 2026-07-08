@@ -238,40 +238,64 @@ class CompareVersionStep(BaseStep):
             expected_block = expected.get(key, {})
             if not isinstance(expected_block, dict):
                 continue
-            expected_value = str(expected_block.get("sw_version", "") or "").strip()
-            if not expected_value:
+            expected_values = self._collect_expected_sw_versions(expected_block)
+            if not expected_values:
                 continue
+            expected_label = self._format_expected_sw_versions(expected_values)
 
             actual_instances = self._extract_device_instances(actual).get(key, [])
             if not actual_instances:
-                mismatches.append(f"{key}.sw_version 期望 '{expected_value}'，实际 'EMPTY'")
+                mismatches.append(f"{key}.sw_version 期望 {expected_label}，实际 'EMPTY'")
                 continue
 
             # UWB payload may include both anchor/tag where tag can be "unknown".
-            # Treat this type as passed when any instance reports the expected version.
+            # Treat this type as passed when any instance reports an accepted version.
             if key == "UWB":
-                if any(str(inst.get("sw_version", "") or "").strip() == expected_value for inst in actual_instances):
+                if any(
+                    str(inst.get("sw_version", "") or "").strip() in expected_values
+                    for inst in actual_instances
+                ):
                     continue
+                mismatches.append(
+                    f"{key}.sw_version 期望 {expected_label}，实际未匹配"
+                )
+                continue
 
             for inst in actual_instances:
                 actual_value = str(inst.get("sw_version", "") or "").strip()
-                if actual_value != expected_value:
-                    device_id = str(inst.get("device_id", "") or "").strip()
-                    name = str(inst.get("name", "") or "").strip()
+                if actual_value in expected_values:
+                    continue
 
-                    suffix_parts: list[str] = []
-                    if device_id:
-                        suffix_parts.append(f"id{device_id}")
-                    if name:
-                        suffix_parts.append(name)
+                device_id = str(inst.get("device_id", "") or "").strip()
+                name = str(inst.get("name", "") or "").strip()
 
-                    suffix = " ".join(suffix_parts)
-                    label = f"{key}.sw_version[{suffix}]" if suffix else f"{key}.sw_version"
-                    mismatches.append(
-                        f"{label} 期望 '{expected_value}'，实际 '{actual_value or 'EMPTY'}'"
-                    )
+                suffix_parts: list[str] = []
+                if device_id:
+                    suffix_parts.append(f"id{device_id}")
+                if name:
+                    suffix_parts.append(name)
+
+                suffix = " ".join(suffix_parts)
+                label = f"{key}.sw_version[{suffix}]" if suffix else f"{key}.sw_version"
+                mismatches.append(
+                    f"{label} 期望 {expected_label}，实际 '{actual_value or 'EMPTY'}'"
+                )
 
         return mismatches
+
+    def _collect_expected_sw_versions(self, expected_block: Dict[str, Any]) -> list[str]:
+        values: list[str] = []
+        for field in ("sw_version", "sw_version_compat"):
+            value = str(expected_block.get(field, "") or "").strip()
+            if value and value not in values:
+                values.append(value)
+        return values
+
+    def _format_expected_sw_versions(self, expected_values: list[str]) -> str:
+        if len(expected_values) == 1:
+            return f"'{expected_values[0]}'"
+        joined = "' 或 '".join(expected_values)
+        return f"'{joined}'"
 
     def _extract_device_instances(self, data: Dict[str, Any]) -> Dict[str, list[Dict[str, str]]]:
         """

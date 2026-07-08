@@ -217,6 +217,18 @@ class PortWorker(QObject):
                 )
         except Exception as e:  # noqa: BLE001
             self._logger.warning(f"应用 ssh.import_script_path 覆盖失败: {e}")
+
+        # 配置「测试站 → 煲机数据保存目录」(ssh.burnin_data_save_dir) 非空时，覆盖 pvt_ota_pull_local_parent
+        try:
+            _save_dir = self.context.get_data("ssh_burnin_data_save_dir", "")
+            if isinstance(_save_dir, str) and _save_dir.strip():
+                self.context.set_data("pvt_ota_pull_local_parent", _save_dir.strip())
+                self._logger.info(
+                    "已使用配置 ssh.burnin_data_save_dir 覆盖 pvt_ota_pull_local_parent: %s",
+                    _save_dir.strip(),
+                )
+        except Exception as e:  # noqa: BLE001
+            self._logger.warning(f"应用 ssh.burnin_data_save_dir 覆盖失败: {e}")
         
         # 获取步骤列表
         steps = self._sequence.steps
@@ -427,15 +439,14 @@ class PortWorker(QObject):
                         self._logger.warning("  错误代码: %s", ec)
                     self.sig_step.emit(step_config.id, "Fail")
 
-                    # 任一步失败即停：产线/调试均不得在本步标红后继续执行后续步骤。
-                    # YAML 的 on_failure=continue/skip 不再表示「失败后仍跑后续步骤」。
                     failure_policy = (getattr(step_config, "on_failure", None) or "fail").lower()
                     if failure_policy in ("continue", "skip"):
                         self._logger.warning(
-                            "步骤失败且 YAML on_failure=%s：本版本已固定为「任一步失败即停」，"
-                            "不再在失败后继续执行后续步骤。",
+                            "步骤失败且 YAML on_failure=%s：继续执行后续步骤（如 MesEnd）",
                             failure_policy,
                         )
+                        continue
+
                     mes_uploaded = self._run_mes_end_after_failure(
                         steps=steps,
                         failed_step_id=step_config.id,
@@ -479,10 +490,11 @@ class PortWorker(QObject):
                 failure_policy = (getattr(step_config, "on_failure", None) or "fail").lower()
                 if failure_policy in ("continue", "skip"):
                     self._logger.warning(
-                        "步骤异常且 YAML on_failure=%s：本版本已固定为「任一步失败即停」，"
-                        "不再在失败后继续执行后续步骤。",
+                        "步骤异常且 YAML on_failure=%s：继续执行后续步骤",
                         failure_policy,
                     )
+                    continue
+
                 mes_uploaded = self._run_mes_end_after_failure(
                     steps=steps,
                     failed_step_id=step_config.id,
@@ -540,9 +552,29 @@ class PortWorker(QObject):
 
             params = dict(getattr(mes_end_cfg, "params", {}) or {})
             params["prompt_overall_result"] = False
-            params["overall_result"] = "FAIL"
             err = getattr(failed_result, "error", None) or getattr(failed_result, "message", "") or "测试失败"
-            params["error_message"] = f"{failed_step_id}({failed_step_name}) 失败: {err}"
+            err_line = f"{failed_step_id}({failed_step_name}) 失败: {err}"
+            burnin_src = str(params.get("overall_result_source", "") or "").strip().lower()
+            burnin_key = str(
+                params.get("burnin_outcome_context_key", "pvt_hub_burnin_outcome") or "pvt_hub_burnin_outcome"
+            ).strip()
+            burnin_oc = str(self.context.get_data(burnin_key) or "").strip().lower() if self.context else ""
+            raw_required = params.get("required_pass_step_ids") or params.get("must_pass_step_ids")
+            required_ids: set[str] = set()
+            if isinstance(raw_required, str):
+                required_ids = {s.strip() for s in raw_required.split(",") if s.strip()}
+            elif isinstance(raw_required, (list, tuple)):
+                required_ids = {str(x).strip() for x in raw_required if str(x).strip()}
+            required_failed = failed_step_id in required_ids if required_ids else False
+            if burnin_src == "burnin" and burnin_oc == "ok" and not required_failed:
+                params["overall_result"] = "PASS"
+                params["error_message"] = f"煲机无异常；但 {err_line}"
+                self._logger.info(
+                    "失败直跳 MesEnd：煲机结果为 ok，按 PASS 上报并附带失败步骤说明"
+                )
+            else:
+                params["overall_result"] = "FAIL"
+                params["error_message"] = err_line
 
             self._logger.info(
                 "失败直跳 MesEnd：step=%s(%s)，error=%s",

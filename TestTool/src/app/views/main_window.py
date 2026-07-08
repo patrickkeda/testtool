@@ -211,6 +211,8 @@ class MainWindow(QMainWindow):
         mes_action.triggered.connect(self._on_open_mes_config)
         version_action = self._config_menu.addAction(self._i18n.t("menu.config.version"))
         version_action.triggered.connect(self._on_open_version_config)
+        ota_version_action = self._config_menu.addAction(self._i18n.t("menu.config.ota_version"))
+        ota_version_action.triggered.connect(self._on_open_ota_version_config)
         ports_action = self._config_menu.addAction(self._i18n.t("menu.config.ports"))
         ports_action.triggered.connect(self._on_open_ports_config)
 
@@ -1114,6 +1116,16 @@ class MainWindow(QMainWindow):
                 context.set_data("ssh_import_script_path", imp_path.strip())
             else:
                 context.set_data("ssh_import_script_path", "")
+
+            data_dir = (
+                getattr(ssh_cfg, "burnin_data_save_dir", "")
+                if ssh_cfg is not None
+                else ""
+            )
+            if isinstance(data_dir, str) and data_dir.strip():
+                context.set_data("ssh_burnin_data_save_dir", data_dir.strip())
+            else:
+                context.set_data("ssh_burnin_data_save_dir", "")
 
             # 将端口配置中与 PLC / 治具相关的串口参数注入到 Context.state，
             # 供 plc.modbus.* 步骤直接使用（避免每次都手动改 YAML）
@@ -2435,3 +2447,16 @@ class MainWindow(QMainWindow):
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, self._i18n.t("dialog.error"), self._i18n.t("err.open_version").format(e=e))
+
+    def _on_open_ota_version_config(self) -> None:
+        """打开 OTA 版本配置对话框"""
+        try:
+            from .ota_version_config_dialog import OtaVersionConfigDialog
+            dialog = OtaVersionConfigDialog(self, self._config_service)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                self._i18n.t("dialog.error"),
+                self._i18n.t("err.open_ota_version").format(e=e),
+            )

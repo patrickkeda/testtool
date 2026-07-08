@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import socket
+import sys
 import ctypes
 import ctypes.wintypes as wintypes
 import os
@@ -697,13 +698,41 @@ class ZebraPrintStep(BaseStep):
         except Exception as e:  # noqa: BLE001
             ctx.log_warning(f"打开安装程序/下载地址失败: {e}")
 
+    def _resolve_printer_config_path(self) -> Optional[Path]:
+        """与 main.py 一致：打包态优先读 exe 旁 Config/config.yaml（用户可写）。"""
+        candidates: List[Path] = []
+        if getattr(sys, "frozen", False):
+            exe_dir = Path(sys.executable).resolve().parent
+            candidates.extend(
+                [
+                    exe_dir / "Config" / "config.yaml",
+                    exe_dir / "_internal" / "Config" / "config.yaml",
+                    exe_dir / "config" / "config.yaml",
+                ]
+            )
+        candidates.extend(
+            [
+                Path.cwd() / "Config" / "config.yaml",
+                Path("Config/config.yaml"),
+                Path(__file__).resolve().parents[4] / "Config" / "config.yaml",
+            ]
+        )
+        seen: set[str] = set()
+        for p in candidates:
+            try:
+                key = str(p.resolve())
+            except OSError:
+                key = str(p)
+            if key in seen:
+                continue
+            seen.add(key)
+            if p.is_file():
+                return p
+        return None
+
     def _merge_params_with_config(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """合并 Config/config.yaml 中的 printer 段与步骤 params，后者优先。"""
-        candidates = [
-            Path("Config/config.yaml"),
-            Path(__file__).resolve().parents[4] / "Config" / "config.yaml",
-        ]
-        cfg_path = next((p for p in candidates if p.exists()), None)
+        cfg_path = self._resolve_printer_config_path()
         if cfg_path is None:
             return dict(params)
 
@@ -721,8 +750,18 @@ class ZebraPrintStep(BaseStep):
             if not defaults.get("enabled", True):
                 return None
             defaults.pop("enabled", None)
-            return {**defaults, **params}
-        except Exception:  # noqa: BLE001
+            merged = {**defaults, **params}
+            if getattr(self, "logger", None):
+                self.logger.info(
+                    "打印机配置已合并: %s (image_imei_x_px=%s, hardlock_enabled=%s)",
+                    cfg_path,
+                    merged.get("image_imei_x_px"),
+                    merged.get("hardlock_enabled"),
+                )
+            return merged
+        except Exception as exc:  # noqa: BLE001
+            if getattr(self, "logger", None):
+                self.logger.warning("读取打印机配置失败，仅使用步骤 params: %s", exc)
             return dict(params)
 
     @staticmethod
@@ -1179,6 +1218,14 @@ class ZebraImagePrintStep(ZebraPrintStep):
         render_scope.pop("scramble", None)
         imei = self._render_template(imei_tpl, ctx, render_scope).strip()
         scramble = self._render_template(scramble_tpl, ctx, render_scope).strip()
+        if not imei:
+            imei = str(ctx.get_data("imei", "") or "").strip()
+        if not imei:
+            sn_val = str(ctx.get_sn() or "").strip()
+            if sn_val and sn_val.upper() != "NULL":
+                imei = sn_val
+        if not scramble:
+            scramble = str(ctx.get_data("scramble", "") or "").strip()
         if not imei:
             return self.create_failure_result("缺少参数: imei", error="PARAM_IMEI_REQUIRED")
         if not scramble:

@@ -549,6 +549,22 @@ class _StationTestSettingsPage(QWidget):
         self.lbl_import_script_hint = QLabel(self._t("config.ssh.import_script_hint"), self)
         self.lbl_import_script_hint.setWordWrap(True)
         form_burnin.addRow(self.lbl_import_script_hint)
+        self.ed_burnin_data_dir = QLineEdit(self)
+        self.ed_burnin_data_dir.setPlaceholderText("D:/BurnInData  (empty = user Downloads)")
+        row_data = QHBoxLayout()
+        row_data.addWidget(self.ed_burnin_data_dir, stretch=1)
+        self.btn_browse_data_dir = QPushButton(self._t("config.ssh.browse_dir"))
+        self.btn_browse_data_dir.clicked.connect(self._on_browse_burnin_data_dir)
+        row_data.addWidget(self.btn_browse_data_dir)
+        wrap_data = QWidget(self)
+        wrap_data.setLayout(row_data)
+        self._lbl_burnin_data_dir = QLabel(self._t("config.ssh.burnin_data_save_dir"), self)
+        form_burnin.addRow(self._lbl_burnin_data_dir, wrap_data)
+        self.lbl_burnin_data_dir_hint = QLabel(
+            self._t("config.ssh.burnin_data_save_dir_hint"), self
+        )
+        self.lbl_burnin_data_dir_hint.setWordWrap(True)
+        form_burnin.addRow(self.lbl_burnin_data_dir_hint)
         layout.addWidget(self.grp_burnin)
 
         layout.addStretch(1)
@@ -573,6 +589,15 @@ class _StationTestSettingsPage(QWidget):
         if path:
             self.ed_import_script.setText(path)
 
+    def _on_browse_burnin_data_dir(self) -> None:
+        path = QFileDialog.getExistingDirectory(
+            self,
+            self._t("config.ssh.burnin_data_save_dir"),
+            self.ed_burnin_data_dir.text() or "",
+        )
+        if path:
+            self.ed_burnin_data_dir.setText(path)
+
     def apply_retranslate(self) -> None:
         self.lbl_intro.setText(self._t("config.station.intro"))
         self.grp_ssh.setTitle(self._t("config.station.ssh_group"))
@@ -583,6 +608,11 @@ class _StationTestSettingsPage(QWidget):
         self._lbl_import_script.setText(self._t("config.ssh.import_script"))
         self.btn_browse_import.setText(self._t("config.ssh.browse"))
         self.lbl_import_script_hint.setText(self._t("config.ssh.import_script_hint"))
+        self._lbl_burnin_data_dir.setText(self._t("config.ssh.burnin_data_save_dir"))
+        self.btn_browse_data_dir.setText(self._t("config.ssh.browse_dir"))
+        self.lbl_burnin_data_dir_hint.setText(
+            self._t("config.ssh.burnin_data_save_dir_hint")
+        )
 
 
 class ConfigDialog(QDialog):
@@ -784,9 +814,13 @@ class ConfigDialog(QDialog):
             self.page_station.ed_import_script.setText(
                 getattr(ssh_cfg, "import_script_path", "") or ""
             )
+            self.page_station.ed_burnin_data_dir.setText(
+                getattr(ssh_cfg, "burnin_data_save_dir", "") or ""
+            )
         else:
             self.page_station.ed_private_key.clear()
             self.page_station.ed_import_script.clear()
+            self.page_station.ed_burnin_data_dir.clear()
     
     def _load_port_config(self, page, port_cfg) -> None:
         """加载单个端口的配置"""
@@ -870,6 +904,7 @@ class ConfigDialog(QDialog):
         if getattr(cfg, "ssh", None) is not None:
             cfg.ssh.private_key_path = self.page_station.ed_private_key.text().strip()
             cfg.ssh.import_script_path = self.page_station.ed_import_script.text().strip()
+            cfg.ssh.burnin_data_save_dir = self.page_station.ed_burnin_data_dir.text().strip()
         
         self._service._config = cfg
 

@@ -121,7 +121,36 @@ steps:
     expect: null
     on_failure: fail
 
-  # Step 6: 操作提示 - 弹出确认对话框
+  # Step 6: 读取版本（UWB 站仅校验 UWB 固件，主版本或兼容版本均可）
+  - id: step_read_version
+    name: ReadVersion
+    type: engineer.test
+    params:
+      command: 'version=0%'
+      robot_ip: '${robot_ip}'
+      port: ${robot_port}
+      timeout: 30
+    timeout: 35000
+    retries: 1
+    condition: null
+    expect: null
+    on_failure: fail
+
+  - id: step_compare_uwb_version
+    name: UWBVersionCheck
+    type: case.compare_version
+    params:
+      version_step_id: step_read_version
+      config_path: Config/config.yaml
+      only_keys:
+        - UWB
+    timeout: 5000
+    retries: 0
+    condition: null
+    expect: null
+    on_failure: fail
+
+  # Step 7: 操作提示 - 弹出确认对话框
   - id: step_6
     name: FixtureInstruction
     type: utility.confirm

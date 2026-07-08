@@ -11,6 +11,10 @@
 若设置 local_script_file（运行 TestTool 的机器上的路径），则通过 SSH 在远端执行
 ``bash -s`` 并从 stdin 传入脚本内容，无需在 S100 上预先拷贝脚本文件（执行环境仍在远端 Linux）。
 
+可选 ``jump_host`` / ``jump_port``（默认 22）：经跳板机 Paramiko direct-tcpip 隧道连接 ``host`` 再执行命令
+（与 ``case.mic_record_ssh`` 拓扑一致，适用于 PC 无法直连 X5 等内网地址）。跳板模式下仅支持 ``command``，
+不支持 ``local_script_file``、``upload_local_file``、``invoke_remote_script``。
+
 若设置 invoke_remote_script=true 并提供 remote_script_path（远端要执行的脚本路径，如 ``/app/pvt_stress_test_v3.sh``），
 则构造与手动操作等效的 ``bash -lc`` 命令：可选 ``mount -o remount,rw /app``、``cd``、``chmod +x``、``exec ./脚本``，
 并将 script_args 原样追加在脚本名之后。与 command 互斥；此模式下若仍填写 local_script_file 会被忽略（便于同一 YAML 切换本机 stdin 脚本 / 远端脚本）。
@@ -201,6 +205,8 @@ class SshExecStep(BaseStep):
             )
 
         host = self.get_param_str(params, "host", "").strip()
+        jump_host = self.get_param_str(params, "jump_host", "").strip()
+        jump_port = self.get_param_int(params, "jump_port", 22)
         username = self.get_param_str(params, "username", "").strip()
         command = self.get_param_str(params, "command", "").strip()
         local_script_file = self.get_param_str(params, "local_script_file", "").strip()
@@ -244,6 +250,14 @@ class SshExecStep(BaseStep):
                     error_code="SSH_EXEC_UPLOAD_LOCAL_MISSING",
                 )
             upload_local_abs = str(ul_p.resolve())
+
+        if jump_host and (local_script_file or upload_local_file or invoke_remote):
+            return StepResult(
+                passed=False,
+                message="参数冲突",
+                error="jump_host 已设置时仅支持 command 模式（不支持 local_script_file / upload_local_file / invoke_remote_script）",
+                error_code="SSH_EXEC_BAD_PARAMS",
+            )
 
         if invoke_remote:
             if command:
@@ -367,6 +381,7 @@ class SshExecStep(BaseStep):
                 )
 
         client = paramiko.SSHClient()
+        jump_client: Optional[paramiko.SSHClient] = None
         client.set_missing_host_key_policy(
             paramiko.RejectPolicy() if strict_host else paramiko.AutoAddPolicy()
         )
@@ -401,8 +416,44 @@ class SshExecStep(BaseStep):
             if look_for_keys:
                 ctx.log_info("SSH look_for_keys=True（将尝试 ~/.ssh 等默认路径）")
 
-            ctx.log_info(f"SSH 连接 {username}@{host}:{port} …")
-            client.connect(**connect_kw)
+            if jump_host:
+                jump_client = paramiko.SSHClient()
+                jump_client.set_missing_host_key_policy(
+                    paramiko.RejectPolicy() if strict_host else paramiko.AutoAddPolicy()
+                )
+                jump_connect_kw: Dict[str, Any] = {
+                    "hostname": jump_host,
+                    "port": jump_port,
+                    "username": username,
+                    "timeout": connect_timeout,
+                    "allow_agent": allow_agent,
+                    "look_for_keys": look_for_keys,
+                }
+                if pkey is not None:
+                    jump_connect_kw["pkey"] = pkey
+                if password_str:
+                    jump_connect_kw["password"] = password_str
+                ctx.log_info(f"SSH 跳板连接 {username}@{jump_host}:{jump_port} …")
+                jump_client.connect(**jump_connect_kw)
+                jump_transport = jump_client.get_transport()
+                if jump_transport is None:
+                    return StepResult(
+                        passed=False,
+                        message="跳板 Transport 不可用",
+                        error_code="SSH_EXEC_NO_JUMP_TRANSPORT",
+                    )
+                channel = jump_transport.open_channel(
+                    "direct-tcpip",
+                    dest_addr=(host, port),
+                    src_addr=("127.0.0.1", 0),
+                )
+                ctx.log_info(f"经跳板连接目标 {username}@{host}:{port} …")
+                target_connect_kw = dict(connect_kw)
+                target_connect_kw["sock"] = channel
+                client.connect(**target_connect_kw)
+            else:
+                ctx.log_info(f"SSH 连接 {username}@{host}:{port} …")
+                client.connect(**connect_kw)
 
             keepalive_sec = self.get_param_int(params, "keepalive_sec", 10)
             t = client.get_transport()
@@ -869,3 +920,8 @@ class SshExecStep(BaseStep):
                 client.close()
             except Exception:
                 pass
+            if jump_client is not None:
+                try:
+                    jump_client.close()
+                except Exception:
+                    pass

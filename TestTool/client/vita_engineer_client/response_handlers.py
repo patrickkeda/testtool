@@ -22,6 +22,23 @@ cv2 = None
 Image = None
 PointCloudProcessor = None
 
+def _ensure_numpy_and_pil():
+    """红外 mono8 存图等仅需 numpy + Pillow。"""
+    global np, Image
+    if np is None:
+        try:
+            import numpy as _np
+            np = _np
+        except ImportError as e:
+            raise ImportError(f"numpy is required for this operation: {e}")
+    if Image is None:
+        try:
+            from PIL import Image as _Image
+            Image = _Image
+        except ImportError as e:
+            raise ImportError(f"Pillow is required for this operation: {e}")
+
+
 def _ensure_heavy_imports():
     """Lazily import heavy dependencies (numpy, cv2, PIL, matplotlib)."""
     global np, cv2, Image, PointCloudProcessor
@@ -234,7 +251,7 @@ async def handle_infrared_response(response: Dict[str, Any], params) -> bool:
         if len(image_data) != expected_size:
             print(f"Warning: Data size mismatch. Expected {expected_size} bytes, got {len(image_data)} bytes")
         
-        _ensure_heavy_imports()
+        _ensure_numpy_and_pil()
         mono8 = np.frombuffer(image_data, dtype=np.uint8).reshape((height, width))
         # Convert to PIL Image (grayscale)
         image = Image.fromarray(mono8, mode='L')
@@ -249,6 +266,7 @@ async def handle_infrared_response(response: Dict[str, Any], params) -> bool:
         data_str = response.get("data", "")
         if data_str:
             print(f"{data_str}")
+        return True
 
     print(f"invalid operation: {params.operation}")
     return False

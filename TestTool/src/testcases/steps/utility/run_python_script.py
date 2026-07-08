@@ -216,6 +216,7 @@ class RunPythonScriptStep(BaseStep):
 
         child_env = os.environ.copy()
         child_env.setdefault("PYTHONUNBUFFERED", "1")
+        child_env.setdefault("PYTHONIOENCODING", "utf-8")
 
         pop_kw: Dict[str, Any] = {
             "args": cmd,
