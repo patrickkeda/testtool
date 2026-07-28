@@ -1,12 +1,14 @@
 version: '1.0'
 metadata:
-  name: vita01-headmodule-1
-  description: VITA 机器人狗头模组测试序列
+  name: vita01-headmodule-overseas
+  description: >-
+    VITA 机器人狗头模组测试序列（海外版）。流程与 vita01-headmodel 相同；4G/GNSS 改为经 S100
+    跳板 SSH 到 X5 发 AT（Seq/scripts/x5_at_modem_test.py）。需「配置 → 测试站 → 私钥配置」。
   author: TestTool
   created_at: '2025-12-20T00:00:00.000000'
   product: Vita01
   station: HEADMODULE
-  version: '1.0'
+  version: '1.0-overseas'
 variables:
   robot_ip: 192.168.126.2
   robot_port: 3579
@@ -398,14 +400,30 @@ steps:
   state_measurement_config: null
   manual_judgment_config: null
 - id: step_22
-  name: Signal4GDetection
-  type: engineer.test
+  name: Signal4GDetectionOverseas
+  type: utility.run_python_script
   params:
-    command: sig4g=0%
-    robot_ip: ${robot_ip}
-    port: ${robot_port}
-    timeout: 30
-  timeout: 35000
+    script: Seq/scripts/x5_at_modem_test.py
+    args:
+      - --mode
+      - '4g'
+      - --jump-host
+      - ${robot_ip}
+      - --target-host
+      - ${x5_ip}
+      - --user
+      - root
+      - --private-key-file
+      - ${ssh_private_key_path}
+      - --port
+      - /dev/ttyUSB2
+      - --min-csq
+      - '15'
+      - --push-minicom
+      - auto
+      - --minicom-remote
+      - /userdata/minicom
+  timeout: 120000
   retries: 1
   retry_interval_ms: 1000
   condition: null
@@ -432,14 +450,28 @@ steps:
   state_measurement_config: null
   manual_judgment_config: null
 - id: step_24
-  name: GNSSDetection
-  type: engineer.test
+  name: GNSSDetectionOverseas
+  type: utility.run_python_script
   params:
-    command: gnss=0%
-    robot_ip: ${robot_ip}
-    port: ${robot_port}
-    timeout: 30
-  timeout: 35000
+    script: Seq/scripts/x5_at_modem_test.py
+    args:
+      - --mode
+      - gnss
+      - --jump-host
+      - ${robot_ip}
+      - --target-host
+      - ${x5_ip}
+      - --user
+      - root
+      - --private-key-file
+      - ${ssh_private_key_path}
+      - --port
+      - /dev/ttyUSB3
+      - --require-fix
+      - '0'
+      - --expect-model
+      - SIM7600
+  timeout: 120000
   retries: 1
   retry_interval_ms: 1000
   condition: null

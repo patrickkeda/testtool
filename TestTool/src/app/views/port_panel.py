@@ -25,7 +25,6 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QSizePolicy,
     QHeaderView,
-    QComboBox,
     QFrame,
 )
 
@@ -131,21 +130,6 @@ class PortPanel(QWidget):
         actions.addWidget(self.btn_start)
         actions.addWidget(self.btn_pause)
         actions.addWidget(self.btn_stop)
-        
-        # 添加测试模式选择器
-        self.mode_label = QLabel(self._i18n.t("panel.mode.label"), self)
-        self.combo_mode = QComboBox(self)
-        self._populate_mode_combo(select_production=True)
-        self.combo_mode.currentIndexChanged.connect(self._on_mode_index_changed)
-        
-        # 设置模式选择器样式
-        self.mode_label.setFixedHeight(30)
-        self.combo_mode.setFixedHeight(30)
-        self.combo_mode.setMinimumWidth(100)
-
-        actions.addWidget(self._create_spacer(20))  # 添加间距
-        actions.addWidget(self.mode_label)
-        actions.addWidget(self.combo_mode)
         actions.addStretch(1)
         banner_root.addLayout(actions)
 
@@ -338,19 +322,6 @@ class PortPanel(QWidget):
         spacer.setFixedWidth(width)
         return spacer
     
-    def _populate_mode_combo(self, *, select_production: bool) -> None:
-        self.combo_mode.blockSignals(True)
-        self.combo_mode.clear()
-        self.combo_mode.addItem(self._i18n.t("panel.mode.production"), "production")
-        self.combo_mode.addItem(self._i18n.t("panel.mode.debug"), "debug")
-        self.combo_mode.setCurrentIndex(0 if select_production else 1)
-        self.combo_mode.blockSignals(False)
-
-    def _on_mode_index_changed(self, _idx: int) -> None:
-        data = self.combo_mode.currentData()
-        mode = str(data) if data is not None else "production"
-        self.sig_mode_changed.emit(mode)
-
     def _apply_table_headers(self) -> None:
         self.table.setHorizontalHeaderLabels(
             [
@@ -364,13 +335,10 @@ class PortPanel(QWidget):
 
     def retranslate(self, i18n: I18n) -> None:
         """与主窗口语言切换同步。"""
-        cur_mode = self.get_test_mode()
         self._i18n = i18n
         self.btn_start.setText(i18n.t("panel.actions.start"))
         self.btn_pause.setText(i18n.t("panel.actions.pause"))
         self.btn_stop.setText(i18n.t("panel.actions.stop"))
-        self.mode_label.setText(i18n.t("panel.mode.label"))
-        self._populate_mode_combo(select_production=(cur_mode == "production"))
         self.lbl_sn.setText(f"{i18n.t('panel.sn')}: {self._sn_value}")
         st = self.lbl_status.text().split(":", 1)[-1].strip() if ":" in self.lbl_status.text() else ""
         # 状态列在运行时由 MainWindow 按中文/英文刷新；此处仅更新前缀
@@ -390,10 +358,7 @@ class PortPanel(QWidget):
             self.set_overall_result("Fail")
 
     def get_test_mode(self) -> str:
-        """获取当前选择的测试模式（内部标识 production / debug）。"""
-        data = self.combo_mode.currentData()
-        if data == "debug":
-            return "debug"
+        """固定为产线模式（已移除调试/产线切换界面）。"""
         return "production"
 
     def set_overall_result(self, result: Optional[str]) -> None:

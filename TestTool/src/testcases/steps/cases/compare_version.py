@@ -248,9 +248,9 @@ class CompareVersionStep(BaseStep):
                 mismatches.append(f"{key}.sw_version 期望 {expected_label}，实际 'EMPTY'")
                 continue
 
-            # UWB payload may include both anchor/tag where tag can be "unknown".
-            # Treat this type as passed when any instance reports an accepted version.
-            if key == "UWB":
+            # UWB/BMS: accept when any instance matches primary or compat version
+            # (payload may include unknown / mixed instances).
+            if key in ("UWB", "BMS"):
                 if any(
                     str(inst.get("sw_version", "") or "").strip() in expected_values
                     for inst in actual_instances

@@ -299,7 +299,7 @@ class VersionConfigDialog(QDialog):
                 "sw_version": sw_edit,
             }
             form.addRow("软件版本:", sw_edit)
-            if key == "UWB":
+            if key in ("UWB", "BMS"):
                 compat_edit = QLineEdit(self)
                 compat_edit.setPlaceholderText("可选：兼容版本，与软件版本任一匹配即通过")
                 field_edits["sw_version_compat"] = compat_edit

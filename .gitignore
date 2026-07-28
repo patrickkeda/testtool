@@ -97,3 +97,9 @@ TestTool/client/bin/*
 *.zip
 *.7z
 *.tar.gz
+
+# 产线手动调试二进制（体积大，不入库；仅 README 说明）
+TestTool/Seq/tools/minicom
+
+# Cursor 本地规则
+.cursor/

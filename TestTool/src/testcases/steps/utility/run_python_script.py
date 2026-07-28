@@ -1,7 +1,12 @@
 """
 在本机用当前 Python 解释器执行仓库内脚本（subprocess），以进程退出码判定通过/失败。
 
-用于产线序列调用 ``Seq/scripts/mic_test.py`` 等独立脚本；参数中字符串仍由 Worker 做 ``${}`` 展开。
+用于产线序列调用 ``Seq/scripts/mic_test.py`` / ``x5_at_modem_test.py`` 等独立脚本；
+参数中字符串仍由 Worker 做 ``${}`` 展开。
+
+**打包环境**：PyInstaller 下 ``sys.executable`` 是 TestTool.exe，不能当 ``python.exe`` 用。
+此时子进程为 ``TestTool.exe --run-python-script <script.py> ...``，由 ``src.app.main`` 用
+``runpy`` 执行脚本（复用冻结解释器内的依赖），避免再次拉起 HMI 造成假通过。
 
 **超时**：步骤 YAML 里 ``timeout`` 大于 1000 时视为**毫秒**，换算为子进程超时秒数；否则使用
 ``params.timeout_sec``（默认 60 秒）。
@@ -12,9 +17,10 @@
 **日志**：使用 ``Popen`` + 合并 stderr→stdout 单管道读取，子进程**逐行**写入 ``ctx.log_info``，
 避免长时间无界面日志；子进程结束后仍将完整输出放入 ``StepResult.data``。
 
-**控制台 / 弹窗**：Windows 下对 ``mic_test.py`` 使用 ``CREATE_NO_WINDOW | DETACHED_PROCESS``，并配合
-``STARTUPINFO(SW_HIDE)``；子进程内脚本在 stdout 已重定向时也会 ``FreeConsole``。POSIX 下
-``start_new_session=True``。仍可能出现的系统弹窗（杀毒、钥匙串）需在系统侧处理。
+**控制台 / 弹窗**：Windows 下对 ``mic_test.py`` / ``x5_at_modem_test.py`` 使用
+``CREATE_NO_WINDOW | DETACHED_PROCESS``，并配合 ``STARTUPINFO(SW_HIDE)``；子进程内脚本在
+stdout 已重定向时也会 ``FreeConsole``。POSIX 下 ``start_new_session=True``。
+仍可能出现的系统弹窗（杀毒、钥匙串）需在系统侧处理。
 """
 
 from __future__ import annotations
@@ -92,12 +98,12 @@ def _resolve_script_path(raw: str) -> Path:
 
 
 def _popen_kwargs_for_hidden_console(*, script_path: Path) -> Dict[str, Any]:
-    """减少子进程弹出控制台窗口（Windows 为主）。``mic_test.py`` 额外加 DETACHED_PROCESS，降低闪控制台概率。"""
+    """减少子进程弹出控制台窗口（Windows 为主）。产线脚本额外加 DETACHED_PROCESS，降低闪控制台概率。"""
     kw: Dict[str, Any] = {}
     if sys.platform == "win32":
         cf = int(getattr(subprocess, "CREATE_NO_WINDOW", 0) or 0)
         # 0x00000008 DETACHED_PROCESS：不继承父控制台，常与 CREATE_NO_WINDOW 同用于无窗子进程
-        if script_path.name.lower() == "mic_test.py":
+        if script_path.name.lower() in {"mic_test.py", "x5_at_modem_test.py"}:
             cf |= 0x00000008
         if cf:
             kw["creationflags"] = cf
@@ -114,8 +120,15 @@ def _popen_kwargs_for_hidden_console(*, script_path: Path) -> Dict[str, Any]:
     return kw
 
 
+def _build_python_cmd(script_path: Path, args_list: List[str]) -> List[str]:
+    """构造子进程命令行：开发环境用真实解释器；打包环境经 TestTool.exe 的脚本模式。"""
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--run-python-script", str(script_path), *args_list]
+    return [sys.executable, str(script_path), *args_list]
+
+
 class RunPythonScriptStep(BaseStep):
-    """``sys.executable`` + 脚本路径 + ``args``；退出码 0 为通过。"""
+    """当前解释器（或打包后的 ``--run-python-script``）+ 脚本 + ``args``；退出码 0 为通过。"""
 
     def run_once(self, ctx: Context, params: Dict[str, Any]) -> StepResult:
         script_raw = self.get_param_str(params, "script", "").strip()
@@ -210,7 +223,7 @@ class RunPythonScriptStep(BaseStep):
 
         expect_code = int(self.get_param_int(params, "expect_exit_code", 0))
 
-        cmd: List[str] = [sys.executable, str(script_path)] + args_list
+        cmd: List[str] = _build_python_cmd(script_path, args_list)
         ctx.log_info("run_python_script: " + _format_cmd_for_log(cmd))
         _flush_logging_handlers(getattr(ctx, "logger", None))
 

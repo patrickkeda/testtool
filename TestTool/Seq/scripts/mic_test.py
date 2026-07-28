@@ -18,6 +18,19 @@ import sys
 from pathlib import Path
 
 
+def _ensure_utf8_stdio() -> None:
+    """打包子进程在中文 Windows 上常为 gbk，打印非 GBK 字符会 UnicodeEncodeError。"""
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        if stream is None:
+            continue
+        try:
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def _detach_console_when_stdio_piped() -> None:
     """被 TestTool 以管道重定向启动时，脱离 Windows 控制台，减少闪窗/无关控制台弹层。"""
     if sys.platform != "win32":
@@ -105,27 +118,27 @@ def check_x5_audio_record(
         full_output = combined.strip()
 
         if "Recording WAVE" in combined:
-            print("✅ [状态: 正常] X5 录音命令执行成功！")
+            print("[OK] [状态: 正常] X5 录音命令执行成功！")
             if full_output:
                 print("设备返回信息:\n" + full_output)
             return True
 
         if "audio open error" in full_output or "No such file or directory" in full_output:
-            print("❌ [状态: 异常] X5 找不到声卡或打开音频设备失败！", file=sys.stderr)
+            print("[FAIL] [状态: 异常] X5 找不到声卡或打开音频设备失败！", file=sys.stderr)
             if full_output:
                 print(full_output, file=sys.stderr)
             return False
 
-        print("⚠️ [状态: 未知] 出现未预期的输出！", file=sys.stderr)
+        print("[WARN] [状态: 未知] 出现未预期的输出！", file=sys.stderr)
         if full_output:
             print(full_output, file=sys.stderr)
         return False
 
     except paramiko.AuthenticationException:
-        print("❌ 认证失败，请检查私钥。", file=sys.stderr)
+        print("[FAIL] 认证失败，请检查私钥。", file=sys.stderr)
         return False
     except Exception as e:  # noqa: BLE001
-        print(f"❌ 运行过程中发生错误: {e}", file=sys.stderr)
+        print(f"[FAIL] 运行过程中发生错误: {e}", file=sys.stderr)
         return False
     finally:
         target_client.close()
@@ -133,6 +146,7 @@ def check_x5_audio_record(
 
 
 def main(argv: list[str] | None = None) -> int:
+    _ensure_utf8_stdio()
     _detach_console_when_stdio_piped()
     ap = argparse.ArgumentParser(description="X5 arecord 经跳板 SSH（Paramiko）")
     ap.add_argument("--jump-host", required=True, help="跳板机 IP（如 S100）")

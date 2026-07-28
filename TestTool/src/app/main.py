@@ -100,6 +100,62 @@ def configure_logging(config_service: ConfigService) -> LoggingManager:
     return logging_manager
 
 
+def _try_run_as_script_runner(argv: list[str]) -> Optional[int]:
+    """打包环境下执行外部 ``.py`` 脚本（供 ``utility.run_python_script`` 调用）。
+
+    PyInstaller 下 ``sys.executable`` 是 TestTool.exe；若直接把它当解释器启脚本，
+    会再次拉起 HMI 并以退出码 0「假通过」。此处识别 ``--run-python-script``（或兼容
+    旧写法：首参为已存在的 ``.py``），用 ``runpy`` 在同一冻结解释器内跑脚本并返回退出码。
+    """
+    if not getattr(sys, "frozen", False):
+        return None
+
+    args = list(argv or [])
+    script: Optional[str] = None
+    rest: list[str] = []
+
+    if "--run-python-script" in args:
+        i = args.index("--run-python-script")
+        if i + 1 >= len(args):
+            print("缺少 --run-python-script 后的脚本路径", file=sys.stderr)
+            return 2
+        script = args[i + 1]
+        rest = args[:i] + args[i + 2 :]
+    elif args:
+        # 兼容旧版 run_python_script：TestTool.exe script.py ...
+        candidate = args[0]
+        if candidate.lower().endswith(".py"):
+            from pathlib import Path
+
+            p = Path(candidate)
+            if p.is_file():
+                script = str(p.resolve())
+                rest = args[1:]
+
+    if not script:
+        return None
+
+    import runpy
+    from pathlib import Path
+
+    script_path = Path(script)
+    if not script_path.is_file():
+        print(f"脚本不存在: {script}", file=sys.stderr)
+        return 2
+
+    sys.argv = [str(script_path)] + rest
+    try:
+        runpy.run_path(str(script_path), run_name="__main__")
+    except SystemExit as e:
+        code = e.code
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return code
+        return 1
+    return 0
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     """Application main function.
 
@@ -114,7 +170,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         Exit code (0 for success).
     """
     args = argv if argv is not None else sys.argv[1:]
-    
+
+    # 打包后：先尝试作为脚本运行器，避免误启 HMI
+    runner_code = _try_run_as_script_runner(args)
+    if runner_code is not None:
+        return runner_code
+
     # 解析命令行参数
     sequence_path = None
     if args:

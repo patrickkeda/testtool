@@ -7,7 +7,6 @@ from .registry import register
 from .steps.common.measure_current import MeasureCurrentStep
 from .steps.utility.delay import DelayStep
 from .steps.utility.ping_host import PingHostStep
-from .steps.utility.set_zenoh_client_mode import SetZenohClientModeStep
 from .steps.utility.ssh_sftp_pull_dir import SshSftpPullDirStep
 from .steps.utility.confirm import ConfirmStep
 from .steps.utility.run_python_script import RunPythonScriptStep
@@ -110,12 +109,6 @@ def register_all_steps():
         step_type="utility.ping_host",
         step_class=PingHostStep,
         aliases=["ping", "ping_host", "utility.ping"],
-    )
-
-    register(
-        step_type="utility.set_zenoh_client",
-        step_class=SetZenohClientModeStep,
-        aliases=["zenoh.set_client", "set_zenoh_client", "utility.zenoh_set_client"],
     )
 
     register(

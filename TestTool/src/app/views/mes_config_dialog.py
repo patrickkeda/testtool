@@ -561,7 +561,7 @@ class MESConfigDialog(QDialog):
                 QMessageBox.warning(self, "验证失败", "工位ID不能为空")
                 return
 
-            # MES配置修改保护：保存前需要输入密码
+            # MES配置修改保护：保存前需要输入密码（关闭/修改 MES 时校验）
             password, ok = QInputDialog.getText(
                 self,
                 "MES配置确认",
@@ -570,7 +570,7 @@ class MESConfigDialog(QDialog):
             )
             if not ok:
                 return
-            if (password or "").strip() != "huaqinte":
+            if (password or "").strip() != "A!1+4e9ekTH#kHdEbY82lcF-DdEx8X6p#0srMDIAosF%Gm3V":
                 QMessageBox.warning(self, "验证失败", "修改密码错误，MES配置未保存")
                 return
                 
