@@ -273,8 +273,9 @@ def _run_at_session(
         "RC2=$?; rm -f \"$FPY\"; exit $RC2"
     )
     rc, output = sess.exec(remote, exec_timeout=exec_timeout)
-    if rc != 0:
-        raise RuntimeError(f"远端 AT 会话失败，exit={rc}\n{output}")
+    # 与产线旧逻辑一致：仅当非零退出且无输出时失败；有 stdout 仍交给 judge_* 判定
+    if rc != 0 and not output:
+        raise RuntimeError(f"远端 AT 会话失败，exit={rc}")
     if "No such file or directory" in output or "cannot open" in output.lower():
         raise RuntimeError(f"无法打开串口 {port}:\n{output}")
     if "stty failed" in output:
