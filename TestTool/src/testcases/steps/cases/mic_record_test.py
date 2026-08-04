@@ -13,11 +13,8 @@ from typing import Any, Dict, List
 
 from ...base import BaseStep, StepResult
 from ...context import Context
-from .ssh_exec import (
-    _load_pkey_from_file,
-    _load_pkey_from_string,
-    resolve_private_key_file_path,
-)
+from src.drivers.ssh.jump_ssh import JumpSSHSession, load_pkey_from_file, load_pkey_from_string
+from .ssh_exec import resolve_private_key_file_path
 
 
 def _step_timeout_seconds(step_timeout: Any) -> int:
@@ -49,7 +46,7 @@ class MicRecordSshStep(BaseStep):
 
     def run_once(self, ctx: Context, params: Dict[str, Any]) -> StepResult:
         try:
-            import paramiko
+            import paramiko  # noqa: F401
         except ImportError:
             return StepResult(
                 passed=False,
@@ -74,6 +71,7 @@ class MicRecordSshStep(BaseStep):
         failure_ignore_case = self.get_param_bool(
             params, "failure_substrings_ignore_case", False
         )
+        require_zero_exit = self.get_param_bool(params, "require_zero_exit", True)
 
         password = params.get("password")
         password_str = str(password).strip() if password not in (None, "") else ""
@@ -109,7 +107,7 @@ class MicRecordSshStep(BaseStep):
         pkey = None
         if key_file:
             try:
-                pkey = _load_pkey_from_file(key_file)
+                pkey = load_pkey_from_file(key_file)
             except Exception as e:  # noqa: BLE001
                 return StepResult(
                     passed=False,
@@ -127,7 +125,7 @@ class MicRecordSshStep(BaseStep):
                     error_code="MIC_RECORD_KEY_ENV",
                 )
             try:
-                pkey = _load_pkey_from_string(raw)
+                pkey = load_pkey_from_string(raw)
             except Exception as e:  # noqa: BLE001
                 return StepResult(
                     passed=False,
@@ -136,77 +134,25 @@ class MicRecordSshStep(BaseStep):
                     error_code="MIC_RECORD_KEY_PARSE",
                 )
 
-        policy = (
-            paramiko.RejectPolicy() if strict_host else paramiko.AutoAddPolicy()
-        )
-
-        jump_client = paramiko.SSHClient()
-        target_client = paramiko.SSHClient()
-        jump_client.set_missing_host_key_policy(policy)
-        target_client.set_missing_host_key_policy(policy)
-
         try:
-            connect_kw: Dict[str, Any] = {
-                "hostname": jump_host,
-                "port": jump_port,
-                "username": username,
-                "timeout": connect_timeout,
-                "allow_agent": False,
-                "look_for_keys": False,
-            }
-            if pkey is not None:
-                connect_kw["pkey"] = pkey
-            if password_str:
-                connect_kw["password"] = password_str
-
             ctx.log_info(f"SSH 跳板连接 {username}@{jump_host}:{jump_port} …")
-            jump_client.connect(**connect_kw)
-
-            jump_transport = jump_client.get_transport()
-            if jump_transport is None:
-                return StepResult(
-                    passed=False,
-                    message="跳板 Transport 不可用",
-                    error_code="MIC_RECORD_NO_TRANSPORT",
-                )
-
-            channel = jump_transport.open_channel(
-                "direct-tcpip",
-                dest_addr=(target_host, target_port),
-                src_addr=("127.0.0.1", 0),
-            )
-
             ctx.log_info(
                 f"经跳板连接目标 {username}@{target_host}:{target_port} 并执行录音命令 …"
             )
-            target_connect: Dict[str, Any] = {
-                "hostname": target_host,
-                "port": target_port,
-                "username": username,
-                "timeout": connect_timeout,
-                "sock": channel,
-                "allow_agent": False,
-                "look_for_keys": False,
-            }
-            if pkey is not None:
-                target_connect["pkey"] = pkey
-            if password_str:
-                target_connect["password"] = password_str
-            target_client.connect(**target_connect)
+            with JumpSSHSession.connect(
+                jump_host=jump_host,
+                target_host=target_host,
+                username=username,
+                pkey=pkey,
+                password=password_str,
+                jump_port=jump_port,
+                target_port=target_port,
+                connect_timeout=connect_timeout,
+                strict_host_key=strict_host,
+            ) as sess:
+                exit_code, full_output = sess.exec(command, exec_timeout=exec_timeout)
 
-            stdin, stdout, stderr = target_client.exec_command(
-                command, timeout=exec_timeout
-            )
-            _ = stdin
-            out_b = stdout.read()
-            err_b = stderr.read()
-            exit_code = stdout.channel.recv_exit_status()
-
-            out_t = out_b.decode(errors="replace")
-            err_t = err_b.decode(errors="replace")
-            combined = out_t + err_t
-            full_output = combined.strip()
-
+            combined = full_output or ""
             ctx.log_info(f"录音命令退出码: {exit_code}")
             if full_output:
                 preview = full_output[:2000] + ("…" if len(full_output) > 2000 else "")
@@ -214,17 +160,26 @@ class MicRecordSshStep(BaseStep):
 
             data: Dict[str, Any] = {
                 "exit_code": exit_code,
-                "stdout": out_t.strip(),
-                "stderr": err_t.strip(),
+                "stdout": full_output,
+                "stderr": "",
                 "combined": full_output,
             }
 
-            # 与独立脚本一致：先判成功，再判典型声卡/设备错误，其余为未知失败（驱动 Seq Pass/Fail）
-            if success_needle and success_needle in combined:
-                ctx.log_info("✅ [状态: 正常] X5 录音命令执行成功")
+            has_success = bool(success_needle and success_needle in combined)
+            if has_success and (not require_zero_exit or exit_code == 0):
+                ctx.log_info("[OK] [状态: 正常] X5 录音命令执行成功")
                 return StepResult(
                     passed=True,
                     message="X5 录音命令执行成功（正常）",
+                    data=data,
+                )
+
+            if has_success and require_zero_exit and exit_code != 0:
+                return StepResult(
+                    passed=False,
+                    message=f"出现成功关键字但退出码非 0 (exit={exit_code})",
+                    error=full_output or f"exit {exit_code}",
+                    error_code="MIC_RECORD_NONZERO",
                     data=data,
                 )
 
@@ -235,7 +190,7 @@ class MicRecordSshStep(BaseStep):
                 n = needle.lower() if failure_ignore_case else needle
                 if n in hay:
                     ctx.log_error(
-                        "❌ [状态: 异常] X5 找不到声卡或打开音频设备失败"
+                        "[FAIL] [状态: 异常] X5 找不到声卡或打开音频设备失败"
                     )
                     return StepResult(
                         passed=False,
@@ -245,7 +200,7 @@ class MicRecordSshStep(BaseStep):
                         data=data,
                     )
 
-            ctx.log_warning("⚠️ [状态: 未知] 出现未预期的输出")
+            ctx.log_warning("[WARN] [状态: 未知] 出现未预期的输出")
             return StepResult(
                 passed=False,
                 message="出现未预期的输出（未知）",
@@ -254,20 +209,19 @@ class MicRecordSshStep(BaseStep):
                 data=data,
             )
 
-        except paramiko.AuthenticationException as e:
-            return StepResult(
-                passed=False,
-                message="SSH 认证失败",
-                error=str(e),
-                error_code="MIC_RECORD_AUTH",
-            )
         except Exception as e:  # noqa: BLE001
+            import paramiko
+
+            if isinstance(e, paramiko.AuthenticationException):
+                return StepResult(
+                    passed=False,
+                    message="SSH 认证失败",
+                    error=str(e),
+                    error_code="MIC_RECORD_AUTH",
+                )
             return StepResult(
                 passed=False,
                 message="录音 SSH 执行异常",
                 error=str(e),
                 error_code="MIC_RECORD_EXCEPTION",
             )
-        finally:
-            target_client.close()
-            jump_client.close()

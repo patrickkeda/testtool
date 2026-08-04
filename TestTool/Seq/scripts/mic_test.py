@@ -17,6 +17,10 @@ import argparse
 import sys
 from pathlib import Path
 
+# 与本目录 jump_ssh 同仓；打包后由 runpy 加载本脚本
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from jump_ssh import JumpSSHSession  # noqa: E402
+
 
 def _ensure_utf8_stdio() -> None:
     """打包子进程在中文 Windows 上常为 gbk，打印非 GBK 字符会 UnicodeEncodeError。"""
@@ -45,19 +49,6 @@ def _detach_console_when_stdio_piped() -> None:
         pass
 
 
-def _load_pkey(path: str):
-    import paramiko
-
-    expanded = str(Path(path).expanduser())
-    errs: list[str] = []
-    for cls in (paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey):
-        try:
-            return cls.from_private_key_file(expanded)
-        except Exception as e:  # noqa: BLE001
-            errs.append(f"{cls.__name__}: {e}")
-    raise ValueError("无法解析私钥文件: " + "; ".join(errs))
-
-
 def check_x5_audio_record(
     *,
     jump_host: str,
@@ -70,79 +61,59 @@ def check_x5_audio_record(
     connect_timeout: int = 60,
     exec_timeout: int = 90,
 ) -> bool:
-    import paramiko
-
-    pkey = _load_pkey(private_key_file)
-    policy = paramiko.AutoAddPolicy()
-    jump_client = paramiko.SSHClient()
-    target_client = paramiko.SSHClient()
-    jump_client.set_missing_host_key_policy(policy)
-    target_client.set_missing_host_key_policy(policy)
-
     try:
-        jump_client.connect(
-            hostname=jump_host,
-            port=jump_port,
+        with JumpSSHSession.connect(
+            jump_host=jump_host,
+            target_host=target_host,
             username=username,
-            pkey=pkey,
-            timeout=connect_timeout,
-            allow_agent=False,
-            look_for_keys=False,
-        )
-        jump_transport = jump_client.get_transport()
-        if jump_transport is None:
-            print("跳板 Transport 不可用", file=sys.stderr)
-            return False
-
-        channel = jump_transport.open_channel(
-            "direct-tcpip",
-            dest_addr=(target_host, target_port),
-            src_addr=("127.0.0.1", 0),
-        )
-        target_client.connect(
-            hostname=target_host,
-            port=target_port,
-            username=username,
-            pkey=pkey,
-            sock=channel,
-            timeout=connect_timeout,
-            allow_agent=False,
-            look_for_keys=False,
-        )
-
-        stdin, stdout, stderr = target_client.exec_command(command, timeout=exec_timeout)
-        _ = stdin
-        out = stdout.read().decode("utf-8", errors="replace")
-        err = stderr.read().decode("utf-8", errors="replace")
-        combined = out + err
-        full_output = combined.strip()
-
-        if "Recording WAVE" in combined:
-            print("[OK] [状态: 正常] X5 录音命令执行成功！")
-            if full_output:
-                print("设备返回信息:\n" + full_output)
-            return True
-
-        if "audio open error" in full_output or "No such file or directory" in full_output:
-            print("[FAIL] [状态: 异常] X5 找不到声卡或打开音频设备失败！", file=sys.stderr)
-            if full_output:
-                print(full_output, file=sys.stderr)
-            return False
-
-        print("[WARN] [状态: 未知] 出现未预期的输出！", file=sys.stderr)
-        if full_output:
-            print(full_output, file=sys.stderr)
-        return False
-
-    except paramiko.AuthenticationException:
-        print("[FAIL] 认证失败，请检查私钥。", file=sys.stderr)
-        return False
+            private_key_file=private_key_file,
+            jump_port=jump_port,
+            target_port=target_port,
+            connect_timeout=connect_timeout,
+        ) as sess:
+            rc, full_output = sess.exec(command, exec_timeout=exec_timeout)
     except Exception as e:  # noqa: BLE001
-        print(f"[FAIL] 运行过程中发生错误: {e}", file=sys.stderr)
+        msg = str(e)
+        if "Authentication" in type(e).__name__ or "认证" in msg:
+            print("[FAIL] 认证失败，请检查私钥。", file=sys.stderr)
+        else:
+            print(f"[FAIL] 运行过程中发生错误: {e}", file=sys.stderr)
         return False
-    finally:
-        target_client.close()
-        jump_client.close()
+
+    combined = full_output or ""
+    has_wave = "Recording WAVE" in combined
+    device_err = (
+        "audio open error" in combined or "No such file or directory" in combined
+    )
+
+    if has_wave and rc == 0:
+        print("[OK] [状态: 正常] X5 录音命令执行成功！")
+        if combined.strip():
+            print("设备返回信息:\n" + combined.strip())
+        return True
+
+    if has_wave and rc != 0:
+        print(
+            f"[FAIL] [状态: 异常] 出现 Recording WAVE 但退出码非 0 (exit={rc})",
+            file=sys.stderr,
+        )
+        if combined.strip():
+            print(combined.strip(), file=sys.stderr)
+        return False
+
+    if device_err:
+        print("[FAIL] [状态: 异常] X5 找不到声卡或打开音频设备失败！", file=sys.stderr)
+        if combined.strip():
+            print(combined.strip(), file=sys.stderr)
+        return False
+
+    print(
+        f"[WARN] [状态: 未知] 出现未预期的输出！(exit={rc})",
+        file=sys.stderr,
+    )
+    if combined.strip():
+        print(combined.strip(), file=sys.stderr)
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:

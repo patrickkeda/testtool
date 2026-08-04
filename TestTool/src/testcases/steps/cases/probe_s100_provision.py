@@ -13,18 +13,21 @@ from typing import Any, Dict, Tuple
 
 from ...base import BaseStep, StepResult
 from ...context import Context
-from .ssh_exec import _load_pkey_from_file, resolve_private_key_file_path
+from src.drivers.ssh.jump_ssh import connect_direct
+from .ssh_exec import resolve_private_key_file_path
 
 _LIFECYCLE_CMD = (
     "bash -lc "
     + shlex.quote(
-        "chmod 777 /usr/hobot/bin/provision_tool 2>/dev/null; "
+        "chmod +x /usr/hobot/bin/provision_tool 2>/dev/null; "
         "/usr/hobot/bin/provision_tool --get-lifecycle; "
         "echo __LIFECYCLE_RC__=$?"
     )
 )
 
 _ENCRYPTED_RC = 4
+# 126/127 = 不可执行 / 命令不存在；勿误判为「需要 provisioning」
+_TOOL_MISSING_RCS = frozenset({126, 127})
 
 
 def _ssh_lifecycle_rc(
@@ -38,31 +41,15 @@ def _ssh_lifecycle_rc(
     exec_timeout: int,
     strict_host_key: bool,
 ) -> Tuple[int, str, str]:
-    import paramiko
-
-    client = paramiko.SSHClient()
-    if strict_host_key:
-        client.load_system_host_keys()
-        client.set_missing_host_key_policy(paramiko.RejectPolicy())
-    else:
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-    connect_kw: Dict[str, Any] = {
-        "hostname": host,
-        "port": port,
-        "username": username,
-        "timeout": connect_timeout,
-        "allow_agent": False,
-        "look_for_keys": False,
-    }
-    if key_path:
-        connect_kw["pkey"] = _load_pkey_from_file(key_path)
-    elif password:
-        connect_kw["password"] = password
-    else:
-        raise ValueError("缺少 SSH 认证：请配置测试站私钥或 password")
-
-    client.connect(**connect_kw)
+    client = connect_direct(
+        host=host,
+        username=username,
+        private_key_file=key_path,
+        password=password,
+        port=port,
+        connect_timeout=connect_timeout,
+        strict_host_key=strict_host_key,
+    )
     try:
         _stdin, stdout, stderr = client.exec_command(
             _LIFECYCLE_CMD, timeout=exec_timeout
@@ -122,6 +109,12 @@ class ProbeS100ProvisionStep(BaseStep):
             return self.create_failure_result(
                 f"S100 lifecycle 探测失败: {exc}",
                 error=str(exc),
+            )
+
+        if lifecycle_rc in _TOOL_MISSING_RCS:
+            return self.create_failure_result(
+                f"S100 provision_tool 不可用 (lifecycle rc={lifecycle_rc})",
+                error=(err_t or out_t or f"exit {lifecycle_rc}"),
             )
 
         encrypted = lifecycle_rc == _ENCRYPTED_RC

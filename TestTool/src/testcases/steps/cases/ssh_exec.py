@@ -43,7 +43,6 @@ pass_regex_ignore_script_exit（默认 true）：已出现 checkpoint 后不再�
 
 from __future__ import annotations
 
-import io
 import os
 import posixpath
 import re
@@ -56,6 +55,11 @@ from typing import Any, Dict, List, Optional
 
 from ...base import BaseStep, StepResult
 from ...context import Context
+from src.drivers.ssh.jump_ssh import (
+    JumpSSHSession,
+    load_pkey_from_file as _load_pkey_from_file,
+    load_pkey_from_string as _load_pkey_from_string,
+)
 
 
 def _resolve_local_path_for_ssh(raw: str) -> str:
@@ -106,37 +110,10 @@ def resolve_private_key_file_path(params: Dict[str, Any], ctx: Context) -> str:
     return str(fb).strip() if fb not in (None, "") else ""
 
 
-def _load_pkey_from_file(path: str):
-    import paramiko
-
-    expanded = str(Path(path).expanduser())
-    errs: List[str] = []
-    for cls in (paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey):
-        try:
-            return cls.from_private_key_file(expanded)
-        except Exception as e:  # noqa: BLE001
-            errs.append(f"{cls.__name__}: {e}")
-    raise ValueError("无法解析私钥文件: " + "; ".join(errs))
-
-
 def _pkey_md5_fingerprint(pkey) -> str:
     """与 ssh-keygen -lf -E md5 类似的 MD5 指纹格式。"""
     fp = pkey.get_fingerprint()
     return ":".join(f"{b:02x}" for b in fp)
-
-
-def _load_pkey_from_string(key_text: str):
-    import paramiko
-
-    buf = io.StringIO(key_text.strip())
-    errs: List[str] = []
-    for cls in (paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey):
-        try:
-            buf.seek(0)
-            return cls.from_private_key(buf)
-        except Exception as e:  # noqa: BLE001
-            errs.append(f"{cls.__name__}: {e}")
-    raise ValueError("无法解析私钥字符串: " + "; ".join(errs))
 
 
 def _build_remote_script_invoke_command(
@@ -380,26 +357,10 @@ class SshExecStep(BaseStep):
                     error_code="SSH_EXEC_KEY_PARSE",
                 )
 
-        client = paramiko.SSHClient()
-        jump_client: Optional[paramiko.SSHClient] = None
-        client.set_missing_host_key_policy(
-            paramiko.RejectPolicy() if strict_host else paramiko.AutoAddPolicy()
-        )
+        jump_session: Optional[JumpSSHSession] = None
+        client: Optional[Any] = None
 
         try:
-            connect_kw: Dict[str, Any] = {
-                "hostname": host,
-                "port": port,
-                "username": username,
-                "timeout": connect_timeout,
-                "allow_agent": allow_agent,
-                "look_for_keys": look_for_keys,
-            }
-            if pkey is not None:
-                connect_kw["pkey"] = pkey
-            if password_str:
-                connect_kw["password"] = password_str
-
             if key_file:
                 src = "步骤 private_key_file" if pk_explicit else "配置默认私钥 (ssh_private_key_path)"
                 ctx.log_info(f"SSH 使用私钥文件 ({src}): {Path(key_file).expanduser()}")
@@ -417,51 +378,56 @@ class SshExecStep(BaseStep):
                 ctx.log_info("SSH look_for_keys=True（将尝试 ~/.ssh 等默认路径）")
 
             if jump_host:
-                jump_client = paramiko.SSHClient()
-                jump_client.set_missing_host_key_policy(
+                ctx.log_info(f"SSH 跳板连接 {username}@{jump_host}:{jump_port} …")
+                ctx.log_info(f"经跳板连接目标 {username}@{host}:{port} …")
+                jump_session = JumpSSHSession.connect(
+                    jump_host=jump_host,
+                    target_host=host,
+                    username=username,
+                    pkey=pkey,
+                    password=password_str,
+                    jump_port=jump_port,
+                    target_port=port,
+                    connect_timeout=connect_timeout,
+                    strict_host_key=strict_host,
+                    allow_agent=allow_agent,
+                    look_for_keys=look_for_keys,
+                )
+                client = jump_session.target_client
+            else:
+                client = paramiko.SSHClient()
+                client.set_missing_host_key_policy(
                     paramiko.RejectPolicy() if strict_host else paramiko.AutoAddPolicy()
                 )
-                jump_connect_kw: Dict[str, Any] = {
-                    "hostname": jump_host,
-                    "port": jump_port,
+                connect_kw: Dict[str, Any] = {
+                    "hostname": host,
+                    "port": port,
                     "username": username,
                     "timeout": connect_timeout,
                     "allow_agent": allow_agent,
                     "look_for_keys": look_for_keys,
                 }
                 if pkey is not None:
-                    jump_connect_kw["pkey"] = pkey
+                    connect_kw["pkey"] = pkey
                 if password_str:
-                    jump_connect_kw["password"] = password_str
-                ctx.log_info(f"SSH 跳板连接 {username}@{jump_host}:{jump_port} …")
-                jump_client.connect(**jump_connect_kw)
-                jump_transport = jump_client.get_transport()
-                if jump_transport is None:
-                    return StepResult(
-                        passed=False,
-                        message="跳板 Transport 不可用",
-                        error_code="SSH_EXEC_NO_JUMP_TRANSPORT",
-                    )
-                channel = jump_transport.open_channel(
-                    "direct-tcpip",
-                    dest_addr=(host, port),
-                    src_addr=("127.0.0.1", 0),
-                )
-                ctx.log_info(f"经跳板连接目标 {username}@{host}:{port} …")
-                target_connect_kw = dict(connect_kw)
-                target_connect_kw["sock"] = channel
-                client.connect(**target_connect_kw)
-            else:
+                    connect_kw["password"] = password_str
                 ctx.log_info(f"SSH 连接 {username}@{host}:{port} …")
                 client.connect(**connect_kw)
 
             keepalive_sec = self.get_param_int(params, "keepalive_sec", 10)
-            t = client.get_transport()
-            if t is not None and keepalive_sec > 0:
-                t.set_keepalive(keepalive_sec)
-                ctx.log_info(
-                    f"SSH 传输层 keepalive 已开启（每 {keepalive_sec}s），减轻长连接被中间设备空闲断开"
-                )
+            if jump_session is not None:
+                jump_session.set_keepalive(keepalive_sec)
+                if keepalive_sec > 0:
+                    ctx.log_info(
+                        f"SSH 传输层 keepalive 已开启（每 {keepalive_sec}s），减轻长连接被中间设备空闲断开"
+                    )
+            else:
+                t = client.get_transport()
+                if t is not None and keepalive_sec > 0:
+                    t.set_keepalive(keepalive_sec)
+                    ctx.log_info(
+                        f"SSH 传输层 keepalive 已开启（每 {keepalive_sec}s），减轻长连接被中间设备空闲断开"
+                    )
 
             if upload_local_abs:
                 r_dest = self.get_param_str(params, "remote_upload_path", "").strip()
@@ -916,12 +882,10 @@ class SshExecStep(BaseStep):
                 error_code="SSH_EXEC_EXCEPTION",
             )
         finally:
-            try:
-                client.close()
-            except Exception:
-                pass
-            if jump_client is not None:
+            if jump_session is not None:
+                jump_session.close()
+            elif client is not None:
                 try:
-                    jump_client.close()
+                    client.close()
                 except Exception:
                     pass

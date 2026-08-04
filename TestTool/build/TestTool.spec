@@ -244,6 +244,8 @@ a = Analysis(
         'src.drivers',
         'src.drivers.comm',
         'src.drivers.instruments',
+        'src.drivers.ssh',
+        'src.drivers.ssh.jump_ssh',
         'src.instruments',
         'src.mes',
         'src.mes.adapters',

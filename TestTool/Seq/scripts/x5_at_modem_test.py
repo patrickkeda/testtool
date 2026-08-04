@@ -33,6 +33,9 @@ import sys
 import textwrap
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from jump_ssh import JumpSSHSession  # noqa: E402
+
 
 def _ensure_utf8_stdio() -> None:
     """打包子进程在中文 Windows 上常为 gbk，打印非 GBK 字符会 UnicodeEncodeError。"""
@@ -60,181 +63,39 @@ def _detach_console_when_stdio_piped() -> None:
         pass
 
 
-def _load_pkey(path: str):
-    import paramiko
-
-    expanded = str(Path(path).expanduser())
-    errs: list[str] = []
-    for cls in (paramiko.Ed25519Key, paramiko.RSAKey, paramiko.ECDSAKey):
-        try:
-            return cls.from_private_key_file(expanded)
-        except Exception as e:  # noqa: BLE001
-            errs.append(f"{cls.__name__}: {e}")
-    raise ValueError("无法解析私钥文件: " + "; ".join(errs))
-
-
 def _default_minicom_local() -> Path:
     """仓库内 Seq/tools/minicom（与本脚本相对）。"""
     return Path(__file__).resolve().parent.parent / "tools" / "minicom"
 
 
-class _JumpTargetSSH:
-    """经跳板连接 X5，支持 exec / SFTP。"""
-
-    def __init__(
-        self,
-        *,
-        jump_host: str,
-        target_host: str,
-        username: str,
-        private_key_file: str,
-        jump_port: int = 22,
-        target_port: int = 22,
-        connect_timeout: int = 60,
-    ) -> None:
-        import paramiko
-
-        self._paramiko = paramiko
-        self.jump_client = paramiko.SSHClient()
-        self.target_client = paramiko.SSHClient()
-        policy = paramiko.AutoAddPolicy()
-        self.jump_client.set_missing_host_key_policy(policy)
-        self.target_client.set_missing_host_key_policy(policy)
-        pkey = _load_pkey(private_key_file)
-        self.jump_client.connect(
-            hostname=jump_host,
-            port=jump_port,
-            username=username,
-            pkey=pkey,
-            timeout=connect_timeout,
-            allow_agent=False,
-            look_for_keys=False,
-        )
-        jump_transport = self.jump_client.get_transport()
-        if jump_transport is None:
-            raise RuntimeError("跳板 Transport 不可用")
-        channel = jump_transport.open_channel(
-            "direct-tcpip",
-            dest_addr=(target_host, target_port),
-            src_addr=("127.0.0.1", 0),
-        )
-        self.target_client.connect(
-            hostname=target_host,
-            port=target_port,
-            username=username,
-            pkey=pkey,
-            sock=channel,
-            timeout=connect_timeout,
-            allow_agent=False,
-            look_for_keys=False,
-        )
-
-    def exec(self, command: str, exec_timeout: int = 120) -> tuple[int, str]:
-        stdin, stdout, stderr = self.target_client.exec_command(command, timeout=exec_timeout)
-        _ = stdin
-        out = stdout.read().decode("utf-8", errors="replace")
-        err = stderr.read().decode("utf-8", errors="replace")
-        rc = stdout.channel.recv_exit_status()
-        return rc, (out + err).strip()
-
-    def sftp_put(self, local: Path, remote: str) -> None:
-        sftp = self.target_client.open_sftp()
-        try:
-            remote_dir = str(Path(remote).as_posix().rsplit("/", 1)[0])
-            try:
-                sftp.stat(remote_dir)
-            except OSError:
-                # 简单 mkdir（/userdata 一般已存在）
-                try:
-                    sftp.mkdir(remote_dir)
-                except OSError:
-                    pass
-            sftp.put(str(local), remote)
-        finally:
-            sftp.close()
-
-    def close(self) -> None:
-        self.target_client.close()
-        self.jump_client.close()
-
-
-def _ssh_exec(
-    *,
-    jump_host: str,
-    target_host: str,
-    username: str,
-    private_key_file: str,
-    command: str,
-    jump_port: int = 22,
-    target_port: int = 22,
-    connect_timeout: int = 60,
-    exec_timeout: int = 120,
-) -> tuple[int, str]:
-    sess = _JumpTargetSSH(
-        jump_host=jump_host,
-        target_host=target_host,
-        username=username,
-        private_key_file=private_key_file,
-        jump_port=jump_port,
-        target_port=target_port,
-        connect_timeout=connect_timeout,
-    )
-    try:
-        return sess.exec(command, exec_timeout=exec_timeout)
-    finally:
-        sess.close()
-
-
-def _push_minicom(
-    *,
-    jump_host: str,
-    target_host: str,
-    username: str,
-    private_key_file: str,
-    local_path: str,
-    remote_path: str = "/userdata/minicom",
-    jump_port: int = 22,
-    target_port: int = 22,
-    connect_timeout: int = 60,
-) -> None:
+def _push_minicom(sess: JumpSSHSession, *, local_path: str, remote_path: str) -> None:
     """对应手动：scp minicom → X5:/userdata/minicom && chmod +x。
 
-    远端已存在且大小一致时跳过上传。
+    远端已存在且大小一致时跳过上传。复用已有跳板会话。
     """
     local = Path(local_path).expanduser()
     if not local.is_file():
         raise FileNotFoundError(f"本机 minicom 不存在: {local}")
     local_size = local.stat().st_size
-    sess = _JumpTargetSSH(
-        jump_host=jump_host,
-        target_host=target_host,
-        username=username,
-        private_key_file=private_key_file,
-        jump_port=jump_port,
-        target_port=target_port,
-        connect_timeout=connect_timeout,
+    rc, out = sess.exec(
+        f"if [ -f {remote_path} ]; then wc -c < {remote_path}; else echo MISSING; fi",
+        exec_timeout=30,
     )
-    try:
-        rc, out = sess.exec(
-            f"if [ -f {remote_path} ]; then wc -c < {remote_path}; else echo MISSING; fi",
-            exec_timeout=30,
-        )
-        remote_info = (out or "").strip().splitlines()[-1].strip() if out else "MISSING"
-        if remote_info.isdigit() and int(remote_info) == local_size:
-            print(f"[SKIP] minicom 已存在且大小一致，跳过推送: {remote_path} ({local_size} bytes)")
-            rc2, out2 = sess.exec(f"chmod +x {remote_path} && ls -l {remote_path}", exec_timeout=30)
-            if rc2 == 0 and out2:
-                print(out2)
-            return
+    _ = rc
+    remote_info = (out or "").strip().splitlines()[-1].strip() if out else "MISSING"
+    if remote_info.isdigit() and int(remote_info) == local_size:
+        print(f"[SKIP] minicom 已存在且大小一致，跳过推送: {remote_path} ({local_size} bytes)")
+        rc2, out2 = sess.exec(f"chmod +x {remote_path} && ls -l {remote_path}", exec_timeout=30)
+        if rc2 == 0 and out2:
+            print(out2)
+        return
 
-        print(f"推送 minicom → {remote_path} （{local}，{local_size} bytes）…")
-        sess.sftp_put(local, remote_path)
-        rc, out = sess.exec(f"chmod +x {remote_path} && ls -l {remote_path}", exec_timeout=30)
-        if rc != 0:
-            raise RuntimeError(f"chmod/ls 失败: {out}")
-        print(f"[OK] minicom 已推送: {out}")
-    finally:
-        sess.close()
+    print(f"推送 minicom → {remote_path} （{local}，{local_size} bytes）…")
+    sess.sftp_put(local, remote_path)
+    rc, out = sess.exec(f"chmod +x {remote_path} && ls -l {remote_path}", exec_timeout=30)
+    if rc != 0:
+        raise RuntimeError(f"chmod/ls 失败: {out}")
+    print(f"[OK] minicom 已推送: {out}")
 
 
 # 远端 AT：纯 shell（无 Python）。用 stty VMIN/VTIME，静默后 cat 返回。
@@ -376,18 +237,12 @@ _REMOTE_AT_PY = textwrap.dedent(
 
 
 def _run_at_session(
+    sess: JumpSSHSession,
     *,
-    jump_host: str,
-    target_host: str,
-    username: str,
-    private_key_file: str,
     port: str,
     commands: list[str],
     baud: int,
     cmd_timeout: float,
-    jump_port: int,
-    target_port: int,
-    connect_timeout: int,
     exec_timeout: int,
 ) -> str:
     import base64
@@ -417,19 +272,9 @@ def _run_at_session(
         f"\"$PY\" \"$FPY\" {shlex.quote(port)} {baud} {cmd_timeout} {shlex.quote(cmds_joined)}; "
         "RC2=$?; rm -f \"$FPY\"; exit $RC2"
     )
-    rc, output = _ssh_exec(
-        jump_host=jump_host,
-        target_host=target_host,
-        username=username,
-        private_key_file=private_key_file,
-        command=remote,
-        jump_port=jump_port,
-        target_port=target_port,
-        connect_timeout=connect_timeout,
-        exec_timeout=exec_timeout,
-    )
-    if rc != 0 and not output:
-        raise RuntimeError(f"远端 AT 会话失败，exit={rc}")
+    rc, output = sess.exec(remote, exec_timeout=exec_timeout)
+    if rc != 0:
+        raise RuntimeError(f"远端 AT 会话失败，exit={rc}\n{output}")
     if "No such file or directory" in output or "cannot open" in output.lower():
         raise RuntimeError(f"无法打开串口 {port}:\n{output}")
     if "stty failed" in output:
@@ -604,40 +449,44 @@ def judge_gnss(output: str, *, require_fix: bool, expect_model: str) -> bool:
     return ok
 
 
-def run_4g(**kwargs) -> bool:
+def run_4g(sess: JumpSSHSession, **kwargs) -> bool:
     min_csq = kwargs.pop("min_csq")
     min_rssi_dbm = kwargs.pop("min_rssi_dbm")
     port = kwargs.pop("port")
     baud = kwargs.pop("baud")
     cmd_timeout = kwargs.pop("cmd_timeout")
+    exec_timeout = kwargs.pop("exec_timeout")
     output = _run_at_session(
+        sess,
         port=port,
         # 与产线 minicom 一致：AT+CPIN（无 ?）；ERROR 不判失败
         commands=["AT+CSQ", "AT+CPIN", "AT+CREG?", "AT+COPS?"],
         baud=baud,
         cmd_timeout=cmd_timeout,
-        **kwargs,
+        exec_timeout=exec_timeout,
     )
     return judge_4g(output, min_csq=min_csq, min_rssi_dbm=min_rssi_dbm)
 
 
-def run_gnss(**kwargs) -> bool:
+def run_gnss(sess: JumpSSHSession, **kwargs) -> bool:
     require_fix = kwargs.pop("require_fix")
     expect_model = kwargs.pop("expect_model")
     port = kwargs.pop("port")
     baud = kwargs.pop("baud")
     cmd_timeout = kwargs.pop("cmd_timeout")
+    exec_timeout = kwargs.pop("exec_timeout")
     gps_wait = kwargs.pop("gps_wait")
     gps_retries = kwargs.pop("gps_retries")
 
     # 文档第 5 节全套；CGPS=1 后再查 INFO
     commands = ["AT+CGMM", "AT+CGMR", "AT+CGPS=1", "AT+CGPS?", "AT+CGPSINFO"]
     output = _run_at_session(
+        sess,
         port=port,
         commands=commands,
         baud=baud,
         cmd_timeout=cmd_timeout,
-        **kwargs,
+        exec_timeout=exec_timeout,
     )
 
     if require_fix:
@@ -654,11 +503,12 @@ def run_gnss(**kwargs) -> bool:
             print(f"等待 GNSS 定位 {wait:.0f}s（第 {i + 1}/{gps_retries} 次）…")
             time.sleep(wait)
             part = _run_at_session(
+                sess,
                 port=port,
                 commands=["AT+CGPSINFO"],
                 baud=baud,
                 cmd_timeout=cmd_timeout,
-                **kwargs,
+                exec_timeout=exec_timeout,
             )
             info_outputs.append(part)
         output = "\n".join(info_outputs)
@@ -726,56 +576,54 @@ def main(argv: list[str] | None = None) -> int:
     ns = ap.parse_args(argv)
 
     common = dict(
-        jump_host=ns.jump_host.strip(),
-        target_host=ns.target_host.strip(),
-        username=ns.user.strip(),
-        private_key_file=ns.private_key_file.strip(),
-        jump_port=ns.jump_port,
-        target_port=ns.target_port,
-        connect_timeout=ns.connect_timeout,
         exec_timeout=ns.exec_timeout,
         baud=ns.baud,
         cmd_timeout=ns.cmd_timeout,
     )
 
     try:
-        push_raw = (ns.push_minicom or "").strip()
-        if push_raw:
-            local_m = (
-                str(_default_minicom_local())
-                if push_raw.lower() == "auto"
-                else push_raw
-            )
-            _push_minicom(
-                jump_host=common["jump_host"],
-                target_host=common["target_host"],
-                username=common["username"],
-                private_key_file=common["private_key_file"],
-                local_path=local_m,
-                remote_path=(ns.minicom_remote or "/userdata/minicom").strip(),
-                jump_port=common["jump_port"],
-                target_port=common["target_port"],
-                connect_timeout=common["connect_timeout"],
-            )
+        with JumpSSHSession.connect(
+            jump_host=ns.jump_host.strip(),
+            target_host=ns.target_host.strip(),
+            username=ns.user.strip(),
+            private_key_file=ns.private_key_file.strip(),
+            jump_port=ns.jump_port,
+            target_port=ns.target_port,
+            connect_timeout=ns.connect_timeout,
+        ) as sess:
+            push_raw = (ns.push_minicom or "").strip()
+            if push_raw:
+                local_m = (
+                    str(_default_minicom_local())
+                    if push_raw.lower() == "auto"
+                    else push_raw
+                )
+                _push_minicom(
+                    sess,
+                    local_path=local_m,
+                    remote_path=(ns.minicom_remote or "/userdata/minicom").strip(),
+                )
 
-        if ns.mode == "4g":
-            port = (ns.port or "/dev/ttyUSB2").strip()
-            ok = run_4g(
-                port=port,
-                min_csq=ns.min_csq,
-                min_rssi_dbm=ns.min_rssi_dbm,
-                **common,
-            )
-        else:
-            port = (ns.port or "/dev/ttyUSB3").strip()
-            ok = run_gnss(
-                port=port,
-                require_fix=bool(ns.require_fix),
-                expect_model=(ns.expect_model or "").strip(),
-                gps_wait=ns.gps_wait,
-                gps_retries=ns.gps_retries,
-                **common,
-            )
+            if ns.mode == "4g":
+                port = (ns.port or "/dev/ttyUSB2").strip()
+                ok = run_4g(
+                    sess,
+                    port=port,
+                    min_csq=ns.min_csq,
+                    min_rssi_dbm=ns.min_rssi_dbm,
+                    **common,
+                )
+            else:
+                port = (ns.port or "/dev/ttyUSB3").strip()
+                ok = run_gnss(
+                    sess,
+                    port=port,
+                    require_fix=bool(ns.require_fix),
+                    expect_model=(ns.expect_model or "").strip(),
+                    gps_wait=ns.gps_wait,
+                    gps_retries=ns.gps_retries,
+                    **common,
+                )
     except Exception as e:  # noqa: BLE001
         print(f"[FAIL] 运行失败: {e}", file=sys.stderr)
         return 1
