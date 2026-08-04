@@ -2,9 +2,7 @@ version: '1.0'
 metadata:
   name: vita01-head
   description: >-
-    VITA 机器人狗头测试序列。含 X5 8 路麦克风检测（step_x5_mic：本机执行 Seq/scripts/mic_test.py，
-    经 S100 跳板 SSH；需「配置 → 测试站 → 私钥配置」）。该步位于 PLC 002065–002068 位置检测通过之后。
-  author: 'TestTool'
+    VITA 机器人狗头测试序列。含 X5 8 路麦克风检测（step_x5_mic：本机执�?Seq/scripts/mic_test.py�?    �?S100 跳板 SSH；需「配�?�?测试�?�?私钥配置」）。该步位�?PLC 002065�?02068 位置检测通过之后�?  author: 'TestTool'
   created_at: '2025-12-20T00:00:00.000000'
   product: Vita01
   station: HEAD
@@ -13,12 +11,9 @@ metadata:
 variables:
   robot_ip: "192.168.126.2"
   robot_port: 3579
-  # X5 经 S100 跳板 SSH 录音：序列调用 Seq/scripts/mic_test.py（私钥：配置 → 测试站 → ${ssh_private_key_path}）
-  x5_ip: "192.168.127.10"
+  # X5 �?S100 跳板 SSH 录音：序列调�?Seq/scripts/mic_test.py（私钥：配置 �?测试�?�?${ssh_private_key_path}�?  x5_ip: "192.168.127.10"
 
-  # PLC Modbus RTU 串口参数（满足 9600 8O1）
-  plc_serial_port: 'COM3'        # 根据实际治具 PLC 所在串口修改
-  plc_baudrate: 9600
+  # PLC Modbus RTU 串口参数（满�?9600 8O1�?  plc_serial_port: 'COM3'        # 根据实际治具 PLC 所在串口修�?  plc_baudrate: 9600
   plc_parity: 'O'
   plc_stopbits: 1
   plc_bytesize: 8
@@ -26,9 +21,7 @@ variables:
   plc_unit_id: 1
 
 steps:
-  # 步骤0: MES初始化（MesInit）
-  # Step MES-0: MES初始化（MesInit）
-  - id: step_mes_0
+  # 步骤0: MES初始化（MesInit�?  # Step MES-0: MES初始化（MesInit�?  - id: step_mes_0
     name: MESInit
     type: mes.heartbeat
     params: {}
@@ -53,9 +46,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤1.5: MesStart（按SN判站/获取工单）
-  # Step MES-1: MesStart（按SN判站/获取工单）
-  - id: step_mes_1
+  # 步骤1.5: MesStart（按SN判站/获取工单�?  # Step MES-1: MesStart（按SN判站/获取工单�?  - id: step_mes_1
     name: MesStartCheckStation
     type: mes.get_work_order
     params:
@@ -75,7 +66,7 @@ steps:
     params:
       port: '${plc_serial_port}'
       baudrate: ${plc_baudrate}
-      # 这里直接固定为 8O1，避免被配置中的默认 N81 覆盖
+      # 这里直接固定�?8O1，避免被配置中的默认 N81 覆盖
       parity: 'O'
       stopbits: 1
       bytesize: 8
@@ -90,7 +81,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤3: 气缸固定狗头 (在 R0 位置写 1，对应地址 2049)
+  # 步骤3: 气缸固定狗头 (�?R0 位置�?1，对应地址 2049)
   - id: step_3
     name: FixHeadWithCylinder
     type: plc.modbus.write_register
@@ -99,7 +90,7 @@ steps:
       value: 1
       unit_id: ${plc_unit_id}
       use_coil: true
-      description: '气缸固定狗头：写寄存器 002049 (R0) = 1'
+      description: '气缸固定狗头：写寄存�?002049 (R0) = 1'
     timeout: 5000
     retries: 2
     condition: null
@@ -109,7 +100,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤3: 狗头上电 (在 R4 位置写 1，对应地址 2053)
+  # 步骤3: 狗头上电 (�?R4 位置�?1，对应地址 2053)
   - id: step_4
     name: HeadPowerOn
     type: plc.modbus.write_register
@@ -118,7 +109,7 @@ steps:
       value: 1
       unit_id: ${plc_unit_id}
       use_coil: true
-      description: '狗头上电：写寄存器 002053 (R4) = 1'
+      description: '狗头上电：写寄存�?002053 (R4) = 1'
     timeout: 5000
     retries: 2
     condition: null
@@ -128,7 +119,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤4: 狗头上电 (在 R4 位置写 1，对应地址 2053)
+  # 步骤4: 狗头上电 (�?R4 位置�?1，对应地址 2053)
   - id: step_5
     name: HeadPowerOn
     type: plc.modbus.write_register
@@ -137,7 +128,7 @@ steps:
       value: 1
       unit_id: ${plc_unit_id}
       use_coil: true
-      description: 'S100上电：写寄存器 002052 (R3) = 1'
+      description: 'S100上电：写寄存�?002052 (R3) = 1'
     timeout: 5000
     retries: 2
     condition: null
@@ -147,8 +138,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤5: 休息 100 秒
-  - id: step_6
+  # 步骤5: 休息 100 �?  - id: step_6
     name: WaitAfterPowerOn
     type: utility.delay
     params:
@@ -180,7 +170,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤7: x5 标志位检测 (testinfo=0,x5%)，判断返回结果是否为 1
+  # 步骤7: x5 标志位检�?(testinfo=0,x5%)，判断返回结果是否为 1
   - id: step_8
     name: CheckX5Flag
     type: engineer.test
@@ -198,9 +188,8 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # X5 麦克风 8 路录音（arecord）见后文 step_x5_mic：在 PLC 002065–002068 位置检测通过后执行。
-
-  # 步骤8: 狗头标志位设置 (testinfo=1,x5mod,0%)，写入 0
+  # X5 麦克�?8 路录音（arecord）见后文 step_x5_mic：在 PLC 002065�?02068 位置检测通过后执行�?
+  # 步骤8: 狗头标志位设�?(testinfo=1,x5mod,0%)，写�?0
   # - id: step_8
   #   name: SetHeadFlagZero
   #   type: engineer.test
@@ -218,7 +207,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # 步骤9: 雷达检测 (lidar=1,Result\${sn}%)
+  # 步骤9: 雷达检�?(lidar=1,Result\${sn}%)
   # 注意：需要在 TestTool\Result\ 文件夹中建立 ${sn} 的文件（文件夹）
   - id: step_9
     name: LidarDetection
@@ -237,7 +226,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤10: 打开背景板灯 (在 R5 位置写 1，对应地址 2054)
+  # 步骤10: 打开背景板灯 (�?R5 位置�?1，对应地址 2054)
   - id: step_10
     name: TurnOnBacklight
     type: plc.modbus.write_register
@@ -246,7 +235,7 @@ steps:
       value: 1
       unit_id: ${plc_unit_id}
       use_coil: true
-      description: '打开背景板灯：写寄存器 002054 (R5) = 1'
+      description: '打开背景板灯：写寄存�?002054 (R5) = 1'
     timeout: 5000
     retries: 2
     condition: null
@@ -256,7 +245,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤11: 上升毛玻璃气缸 (在 R6 位置写 1，对应地址 2055)
+  # 步骤11: 上升毛玻璃气�?(�?R6 位置�?1，对应地址 2055)
   - id: step_11
     name: RaiseFrostedGlassCylinder
     type: plc.modbus.write_register
@@ -275,7 +264,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤12: 双目检测 (camera=1, Result\${sn}%)
+  # 步骤12: 双目检�?(camera=1, Result\${sn}%)
   - id: step_12
     name: CameraDetection
     type: engineer.test
@@ -293,7 +282,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤13: 收起玻璃气缸 (在 R6 位置写 0，对应地址 2055)
+  # 步骤13: 收起玻璃气缸 (�?R6 位置�?0，对应地址 2055)
   - id: step_13
     name: LowerFrostedGlassCylinder
     type: plc.modbus.write_register
@@ -302,7 +291,7 @@ steps:
       value: 0
       unit_id: ${plc_unit_id}
       use_coil: true
-      description: '收起玻璃气缸：写寄存器 002055 (R6) = 0'
+      description: '收起玻璃气缸：写寄存�?002055 (R6) = 0'
     timeout: 5000
     retries: 2
     condition: null
@@ -312,7 +301,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤14: 关闭背景板灯 (在 R5 位置写 0，对应地址 2054)
+  # 步骤14: 关闭背景板灯 (�?R5 位置�?0，对应地址 2054)
   - id: step_14
     name: TurnOffBacklight
     type: plc.modbus.write_register
@@ -321,7 +310,7 @@ steps:
       value: 0
       unit_id: ${plc_unit_id}
       use_coil: true
-      description: '关闭背景板灯：写寄存器 002054 (R5) = 0'
+      description: '关闭背景板灯：写寄存�?002054 (R5) = 0'
     timeout: 5000
     retries: 2
     condition: null
@@ -331,7 +320,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤15: LCD 检测绿色 (lcd=1,green%)
+  # 步骤15: LCD 检测绿�?(lcd=1,green%)
   - id: step_15
     name: LCDGreenDetection
     type: engineer.test
@@ -367,7 +356,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config:
 
-  # 步骤17: 标定舵机0位 
+  # 步骤17: 标定舵机0�?
   - id: step_16
     name: ServoRotate
     type: engineer.test
@@ -421,8 +410,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤20: 休息 2 秒
-  - id: step_19
+  # 步骤20: 休息 2 �?  - id: step_19
     name: WaitAfterPowerOn
     type: utility.delay
     params:
@@ -454,8 +442,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤22: 休息 2 秒
-  - id: step_21
+  # 步骤22: 休息 2 �?  - id: step_21
     name: WaitAfterPowerOn
     type: utility.delay
     params:
@@ -487,8 +474,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤24: 休息 2 秒
-  - id: step_23
+  # 步骤24: 休息 2 �?  - id: step_23
     name: WaitAfterPowerOn
     type: utility.delay
     params:
@@ -520,8 +506,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
  
-  # 步骤26: 休息 2 秒
-  - id: step_25
+  # 步骤26: 休息 2 �?  - id: step_25
     name: WaitAfterPowerOn
     type: utility.delay
     params:
@@ -553,8 +538,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤28: 休息 2 秒
-  - id: step_27
+  # 步骤28: 休息 2 �?  - id: step_27
     name: WaitAfterServoRotate
     type: utility.delay
     params:
@@ -568,7 +552,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # 步骤18: 头部下传感器 (读取 R11 位置是否为 1，对应地址 2060)
+  # # 步骤18: 头部下传感器 (读取 R11 位置是否�?1，对应地址 2060)
   # - id: step_18
   #   name: CheckHeadDownSensor
   #   type: plc.modbus.read_register
@@ -576,7 +560,7 @@ steps:
   #     address: 2060
   #     count: 1
   #     unit_id: ${plc_unit_id}
-  #     description: '检查头部下传感器 R11 (002060) 是否为 1'
+  #     description: '检查头部下传感�?R11 (002060) 是否�?1'
   #     use_coil: true
   #     expected_value: 1
   #   timeout: 5000
@@ -588,7 +572,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # 步骤19: 头部上传感器 (读取 R10 位置是否为 1，对应地址 2059)
+  # # 步骤19: 头部上传感器 (读取 R10 位置是否�?1，对应地址 2059)
   # - id: step_19
   #   name: CheckHeadUpSensor
   #   type: plc.modbus.read_register
@@ -596,7 +580,7 @@ steps:
   #     address: 2059
   #     count: 1
   #     unit_id: ${plc_unit_id}
-  #     description: '检查头部上传感器 R10 (002059) 是否为 1'
+  #     description: '检查头部上传感�?R10 (002059) 是否�?1'
   #     use_coil: true
   #     expected_value: 1
   #   timeout: 5000
@@ -608,7 +592,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # 步骤20: 头部左传感器 (读取 R12 位置是否为 1，对应地址 2061)
+  # # 步骤20: 头部左传感器 (读取 R12 位置是否�?1，对应地址 2061)
   # - id: step_20
   #   name: CheckHeadLeftSensor
   #   type: plc.modbus.read_register
@@ -616,7 +600,7 @@ steps:
   #     address: 2061
   #     count: 1
   #     unit_id: ${plc_unit_id}
-  #     description: '检查头部左传感器 R12 (002061) 是否为 1'
+  #     description: '检查头部左传感�?R12 (002061) 是否�?1'
   #     use_coil: true
   #     expected_value: 1
   #   timeout: 5000
@@ -628,7 +612,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # 步骤21: 头部右传感器 (读取 R13 位置是否为 1，对应地址 2062)
+  # # 步骤21: 头部右传感器 (读取 R13 位置是否�?1，对应地址 2062)
   # - id: step_21
   #   name: CheckHeadRightSensor
   #   type: plc.modbus.read_register
@@ -636,7 +620,7 @@ steps:
   #     address: 2062
   #     count: 1
   #     unit_id: ${plc_unit_id}
-  #     description: '检查头部右传感器 R13 (002062) 是否为 1'
+  #     description: '检查头部右传感�?R13 (002062) 是否�?1'
   #     use_coil: true
   #     expected_value: 1
   #   timeout: 5000
@@ -666,8 +650,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤28: 休息 2 秒
-  - id: step_29
+  # 步骤28: 休息 2 �?  - id: step_29
     name: WaitAfterServoRotate
     type: utility.delay
     params:
@@ -681,7 +664,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤30: UWB 检测 (uwb=0%)
+  # 步骤30: UWB 检�?(uwb=0%)
   - id: step_30
     name: UWBDetection
     type: engineer.test
@@ -699,7 +682,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤31: 查看 PLC 寄存器 (002065) 是否为 1
+  # 步骤31: 查看 PLC 寄存�?(002065) 是否�?1
   - id: step_31
     name: CheckPlc_2065
     type: plc.modbus.read_register
@@ -707,7 +690,7 @@ steps:
       address: 2065
       count: 1
       unit_id: ${plc_unit_id}
-      description: '检查 PLC (002065) 是否为 1'
+      description: '检�?PLC (002065) 是否�?1'
       use_coil: true
       expected_value: 1
     timeout: 5000
@@ -719,7 +702,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤32: 查看 PLC 寄存器 (002066) 是否为 1
+  # 步骤32: 查看 PLC 寄存�?(002066) 是否�?1
   - id: step_32
     name: CheckPlc_2066
     type: plc.modbus.read_register
@@ -727,7 +710,7 @@ steps:
       address: 2066
       count: 1
       unit_id: ${plc_unit_id}
-      description: '检查 PLC (002066) 是否为 1'
+      description: '检�?PLC (002066) 是否�?1'
       use_coil: true
       expected_value: 1
     timeout: 5000
@@ -739,7 +722,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤33: 查看 PLC 寄存器 (002067) 是否为 1
+  # 步骤33: 查看 PLC 寄存�?(002067) 是否�?1
   - id: step_33
     name: CheckPlc_2067
     type: plc.modbus.read_register
@@ -747,7 +730,7 @@ steps:
       address: 2067
       count: 1
       unit_id: ${plc_unit_id}
-      description: '检查 PLC (002067) 是否为 1'
+      description: '检�?PLC (002067) 是否�?1'
       use_coil: true
       expected_value: 1
     timeout: 5000
@@ -759,7 +742,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤34: 查看 PLC 寄存器 (002068) 是否为 1
+  # 步骤34: 查看 PLC 寄存�?(002068) 是否�?1
   - id: step_34
     name: CheckPlc_2068
     type: plc.modbus.read_register
@@ -767,7 +750,7 @@ steps:
       address: 2068
       count: 1
       unit_id: ${plc_unit_id}
-      description: '检查 PLC (002068) 是否为 1'
+      description: '检�?PLC (002068) 是否�?1'
       use_coil: true
       expected_value: 1
     timeout: 5000
@@ -779,8 +762,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # PLC 位置检测 (2065–2068) 通过后：X5 8 路录音（本机执行 Seq/scripts/mic_test.py）
-  - id: step_x5_mic
+  # PLC 位置检�?(2065�?068) 通过后：X5 8 路录音（本机执行 Seq/scripts/mic_test.py�?  - id: step_x5_mic
     name: X5MicRecord
     type: utility.run_python_script
     params:
@@ -803,7 +785,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤31: 蓝牙检测 (bt=0%)
+  # 步骤31: 蓝牙检�?(bt=0%)
   - id: step_35
     name: BluetoothDetection
     type: engineer.test
@@ -821,7 +803,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤32: 4G 信号检测 (sig4g=0%)
+  # 步骤32: 4G 信号检�?(sig4g=0%)
   - id: step_36
     name: Signal4GDetection
     type: engineer.test
@@ -839,7 +821,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤32b: 双目内参检测 (camera=0%)
+  # 步骤32b: 双目内参检�?(camera=0%)
   - id: step_36_camera0
     name: CameraIntrinsicDetection
     type: engineer.test
@@ -857,7 +839,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤32c: 双目拍照检测 (camera=1%)
+  # 步骤32c: 双目拍照检�?(camera=1%)
   - id: step_36_camera1
     name: CameraCaptureDetection
     type: engineer.test
@@ -875,7 +857,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤33: WiFi 检测 (wifi=0%)，检测 VitaDynamics 网络
+  # 步骤33: WiFi 检�?(wifi=0%)，检�?VitaDynamics 网络
   - id: step_37
     name: WiFiDetection
     type: engineer.test
@@ -893,7 +875,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤34: GNSS 检测 (gnss=0%)
+  # 步骤34: GNSS 检�?(gnss=0%)
   - id: step_38
     name: GNSSDetection
     type: engineer.test
@@ -902,8 +884,9 @@ steps:
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
-    timeout: 35000
-    retries: 1
+    timeout: 120000
+    retries: 3
+    retry_interval_ms: 5000
     condition: null
     expect: null
     on_failure: fail
@@ -911,13 +894,13 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # 步骤29: 音频连通检测 (audio=0%)
+  # # 步骤29: 音频连通检�?(audio=0%)
   - id: step_39
     name: Audiomictest
     type: engineer.test
     params:
       command: 'mic=0%'
-      treat_error_contains_as_pass: "零"
+      treat_error_contains_as_pass: "�?
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
@@ -930,8 +913,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # 步骤30: 狗头标志位设置 (testinfo=1,x5mod,1%)，设置 x5 标志位
-  # - id: step_30
+  # # 步骤30: 狗头标志位设�?(testinfo=1,x5mod,1%)，设�?x5 标志�?  # - id: step_30
   #   name: SetHeadFlagOne
   #   type: engineer.test
   #   params:
@@ -948,7 +930,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # 步骤26: 气缸解除 (在 R1 位置写 1，对应地址 2050)
+  # 步骤26: 气缸解除 (�?R1 位置�?1，对应地址 2050)
   - id: step_40
     name: ReleaseCylinder
     type: plc.modbus.write_register
@@ -957,7 +939,7 @@ steps:
       value: 1
       unit_id: ${plc_unit_id}
       use_coil: true
-      description: '气缸解除：写寄存器 002050 (R1) = 1'
+      description: '气缸解除：写寄存�?002050 (R1) = 1'
     timeout: 5000
     retries: 2
     condition: null
@@ -967,8 +949,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤27: 断开 PLC 连接（失败不影响整体结果）
-  - id: step_41
+  # 步骤27: 断开 PLC 连接（失败不影响整体结果�?  - id: step_41
     name: PlcDisconnect
     type: plc.modbus.disconnect
     params: {}
@@ -982,8 +963,7 @@ steps:
     manual_judgment_config: null
 
   # 步骤28: 测试完成
-  # 注意：此步骤可以是一个空步骤或者断开连接步骤，根据实际需求添加
-  - id: step_42
+  # 注意：此步骤可以是一个空步骤或者断开连接步骤，根据实际需求添�?  - id: step_42
     name: TestComplete
     type: utility.delay
     params:
@@ -997,9 +977,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤43: MesEnd上传测试结果（可选择PASS/FAIL）
-  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL）
-  - id: step_mes_2
+  # 步骤43: MesEnd上传测试结果（可选择PASS/FAIL�?  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL�?  - id: step_mes_2
     name: MesEnd2UploadResult
     type: mes.upload_result
     params:

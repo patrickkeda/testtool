@@ -12,10 +12,8 @@ variables:
   robot_ip: "192.168.126.2"
   robot_port: 3579
   
-  # PLC Modbus RTU 串口参数（满足 19200 8O1，与 plc-com-gui.py 一致）
-  plc_serial_port: 'COM3'        # 根据实际治具 PLC 所在串口修改
-  plc_baudrate: 19200            # 与 plc-com-gui.py 成功配置一致
-  plc_parity: 'O'
+  # PLC Modbus RTU 串口参数（满�?19200 8O1，与 plc-com-gui.py 一致）
+  plc_serial_port: 'COM3'        # 根据实际治具 PLC 所在串口修�?  plc_baudrate: 19200            # �?plc-com-gui.py 成功配置一�?  plc_parity: 'O'
   plc_stopbits: 1
   plc_bytesize: 8
   plc_timeout: 5
@@ -23,8 +21,7 @@ variables:
 
 steps:
 
-  # Step MES-0: MES初始化（MesInit）
-  - id: step_mes_0
+  # Step MES-0: MES初始化（MesInit�?  - id: step_mes_0
     name: MESInit
     type: mes.heartbeat
     params: {}
@@ -51,8 +48,7 @@ steps:
 
   # Step 2: 治具触摸气缸控制 - 显示交互操作提示
 
-  # Step MES-1: MesStart（按SN判站/获取工单）
-  - id: step_mes_1
+  # Step MES-1: MesStart（按SN判站/获取工单�?  - id: step_mes_1
     name: MesStartCheckStation
     type: mes.get_work_order
     params:
@@ -71,7 +67,7 @@ steps:
     type: utility.confirm
     params:
       title: '治具触摸气缸控制'
-      message: '请将板子放好并压紧治具'
+      message: '请将板子放好并压紧治�?
       confirm_text: '确认完成'
       allow_cancel: false
     timeout: null
@@ -83,14 +79,14 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤2: 连接 PLC (Modbus RTU 串口，19200 8O1)
+  # 步骤2: 连接 PLC (Modbus RTU 串口�?9200 8O1)
   - id: step_2
     name: PlcConnect
     type: plc.modbus.connect
     params:
       port: '${plc_serial_port}'
       baudrate: ${plc_baudrate}
-      # 这里直接固定为 8O1，避免被配置中的默认 N81 覆盖
+      # 这里直接固定�?8O1，避免被配置中的默认 N81 覆盖
       parity: 'O'
       stopbits: 1
       bytesize: 8
@@ -105,7 +101,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤3: x5 上电 (在 40051 位置写 1，实际使用地址 51)
+  # 步骤3: x5 上电 (�?40051 位置�?1，实际使用地址 51)
   - id: step_3
     name: X5PowerOn
     type: plc.modbus.write_register
@@ -114,7 +110,7 @@ steps:
       value: 1
       unit_id: ${plc_unit_id}
       use_coil: false
-      description: 'x5 上电：写寄存器 40051 (实际地址 51) = 1'
+      description: 'x5 上电：写寄存�?40051 (实际地址 51) = 1'
     timeout: 5000
     retries: 2
     condition: null
@@ -124,7 +120,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤4: 连接 s100 (DT52 对应 40053，实际使用地址 53，代码减1后发送 52)
+  # 步骤4: 连接 s100 (DT52 对应 40053，实际使用地址 53，代码减1后发�?52)
   - id: step_4
     name: ConnectS100
     type: plc.modbus.write_register
@@ -133,7 +129,7 @@ steps:
       value: 1
       unit_id: ${plc_unit_id}
       use_coil: false
-      description: '连接 s100：DT52 对应 40053 (实际地址 53，代码减1后发送 52) = 1'
+      description: '连接 s100：DT52 对应 40053 (实际地址 53，代码减1后发�?52) = 1'
     timeout: 5000
     retries: 2
     condition: null
@@ -212,7 +208,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤9: UWB 检测 (uwb=0%)
+  # 步骤9: UWB 检�?(uwb=0%)
   - id: step_9
     name: UWBDetection
     type: engineer.test
@@ -248,7 +244,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤11: 开启补光灯继电器 (在 40061 位置写 1，实际使用地址 61)
+  # 步骤11: 开启补光灯继电�?(�?40061 位置�?1，实际使用地址 61)
   - id: step_11
     name: TurnOnFillLightRelay
     type: plc.modbus.write_register
@@ -288,7 +284,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤13: 关闭补光灯继电器 (在 40061 位置写 99，实际使用地址 61)
+  # 步骤13: 关闭补光灯继电器 (�?40061 位置�?99，实际使用地址 61)
   - id: step_13
     name: TurnOffFillLightRelay
     type: plc.modbus.write_register
@@ -297,7 +293,7 @@ steps:
       value: 99
       unit_id: ${plc_unit_id}
       use_coil: false
-      description: '关闭补光灯继电器：写寄存器 40061 (实际地址 61) = 99'
+      description: '关闭补光灯继电器：写寄存�?40061 (实际地址 61) = 99'
     timeout: 5000
     retries: 2
     condition: null
@@ -307,7 +303,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤14: 关闭补光灯 (fill_light=0%)
+  # 步骤14: 关闭补光�?(fill_light=0%)
   - id: step_14
     name: TurnOffFillLight
     type: engineer.test
@@ -352,8 +348,9 @@ steps:
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
-    timeout: 35000
-    retries: 1
+    timeout: 120000
+    retries: 3
+    retry_interval_ms: 5000
     condition: null
     expect: null
     on_failure: fail
@@ -415,7 +412,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 31: 写入 efuseSN（仅 SN 后 9 位）
+  # Step 31: 写入 efuseSN（仅 SN �?9 位）
   - id: step_31
     name: WriteEfuseSN
     type: engineer.test
@@ -433,7 +430,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤20: 治具下电 (在 40051 位置写 99，实际使用地址 51)
+  # 步骤20: 治具下电 (�?40051 位置�?99，实际使用地址 51)
   - id: step_20
     name: X5PowerOff
     type: plc.modbus.write_register
@@ -442,7 +439,7 @@ steps:
       value: 99
       unit_id: ${plc_unit_id}
       use_coil: false
-      description: '治具下电：写寄存器 40051 (实际地址 51) = 99'
+      description: '治具下电：写寄存�?40051 (实际地址 51) = 99'
     timeout: 5000
     retries: 2
     condition: null
@@ -452,7 +449,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤21: S100 下电 (DT52 对应 40053，实际使用地址 53，代码减1后发送 52，写 99)
+  # 步骤21: S100 下电 (DT52 对应 40053，实际使用地址 53，代码减1后发�?52，写 99)
   - id: step_21
     name: S100PowerOff
     type: plc.modbus.write_register
@@ -461,7 +458,7 @@ steps:
       value: 99
       unit_id: ${plc_unit_id}
       use_coil: false
-      description: 'S100 下电：DT52 对应 40053 (实际地址 53，代码减1后发送 52) = 99'
+      description: 'S100 下电：DT52 对应 40053 (实际地址 53，代码减1后发�?52) = 99'
     timeout: 5000
     retries: 2
     condition: null
@@ -471,8 +468,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # 步骤22: 断开 PLC 连接（失败不影响整体结果）
-  - id: step_22
+  # 步骤22: 断开 PLC 连接（失败不影响整体结果�?  - id: step_22
     name: PlcDisconnect
     type: plc.modbus.disconnect
     params: {}
@@ -487,8 +483,7 @@ steps:
 
 # 序列级别默认配置
 
-  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL）
-  - id: step_mes_2
+  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL�?  - id: step_mes_2
     name: MesEnd2UploadResult
     type: mes.upload_result
     params:

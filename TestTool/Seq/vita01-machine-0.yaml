@@ -14,8 +14,7 @@ variables:
 
 steps:
 
-  # Step MES-0: MES初始化（MesInit）
-  - id: step_mes_0
+  # Step MES-0: MES初始化（MesInit�?  - id: step_mes_0
     name: MESInit
     type: mes.heartbeat
     params: {}
@@ -32,7 +31,7 @@ steps:
     type: scan.sn
     params:
       dialog_title: '扫描/输入产品SN'
-      hint: '请扫描/输入SN（共19位，且前5位为80100）后回车'
+      hint: '请扫�?输入SN（共19位，且前5位为80100）后回车'
       regex: '^80100[A-Z0-9]{14}$'
       timeout_ms: 60000
     timeout: 5000
@@ -46,8 +45,7 @@ steps:
 
   # Step 2: 工程模式
 
-  # Step MES-1: MesStart（按SN判站/获取工单）
-  - id: step_mes_1
+  # Step MES-1: MesStart（按SN判站/获取工单�?  - id: step_mes_1
     name: MesStartCheckStation
     type: mes.get_work_order
     params:
@@ -78,7 +76,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 3: x5标志位检测 - 判断是否为1
+  # Step 3: x5标志位检�?- 判断是否�?
   - id: step_3
     name: X5FlagDetection
     type: engineer.test
@@ -96,7 +94,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 4: 狗头标志位设置 - 判断是否为1
+  # Step 4: 狗头标志位设�?- 判断是否�?
   - id: step_4
     name: DogHeadFlagSetting
     type: engineer.test
@@ -114,7 +112,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 5: 雷达检测 - 将点云信息存储到带sn的文件夹下面
+  # Step 5: 雷达检�?- 将点云信息存储到带sn的文件夹下面
   - id: step_5
     name: LidarDetection
     type: engineer.test
@@ -132,7 +130,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 6: 双目检测 - 将点云信息存储到带sn的文件夹下面
+  # Step 6: 双目检�?- 将点云信息存储到带sn的文件夹下面
   - id: step_6
     name: StereoVisionDetection
     type: engineer.test
@@ -168,13 +166,12 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # Step 11: 弹窗 - 请将网线拔掉，并等待机器狗行走
-  # - id: step_11
+  # # Step 11: 弹窗 - 请将网线拔掉，并等待机器狗行�?  # - id: step_11
   #   name: UnplugNetworkConfirm
   #   type: utility.confirm
   #   params:
   #     title: '操作提示'
-  #     message: '请将网线拔掉，并等待机器狗行走'
+  #     message: '请将网线拔掉，并等待机器狗行�?
   #     confirm_text: '确认'
   #     allow_cancel: false
   #   timeout: null
@@ -186,13 +183,12 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # Step 12: 弹窗 - 请接回网线，并且确保机器狗放置原位
-  # - id: step_12
+  # # Step 12: 弹窗 - 请接回网线，并且确保机器狗放置原�?  # - id: step_12
   #   name: PlugNetworkConfirm
   #   type: utility.confirm
   #   params:
   #     title: '操作提示'
-  #     message: '请接回网线，并且确保机器狗放置原位'
+  #     message: '请接回网线，并且确保机器狗放置原�?
   #     confirm_text: '确认'
   #     allow_cancel: false
   #   timeout: null
@@ -204,8 +200,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # Step 13: 机器狗回执
-  # - id: step_13
+  # # Step 13: 机器狗回�?  # - id: step_13
   #   name: RobotDogReceipt
   #   type: engineer.test
   #   params:
@@ -240,8 +235,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 9: uwb检测
-  - id: step_9
+  # Step 9: uwb检�?  - id: step_9
     name: UWBDetection
     type: engineer.test
     params:
@@ -258,8 +252,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 10: 蓝牙检测
-  - id: step_10
+  # Step 10: 蓝牙检�?  - id: step_10
     name: BluetoothDetection
     type: engineer.test
     params:
@@ -276,8 +269,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 11: 4g信号检测
-  - id: step_11
+  # Step 11: 4g信号检�?  - id: step_11
     name: Signal4GDetection
     type: engineer.test
     params:
@@ -294,8 +286,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 12: wifi检测
-  - id: step_12
+  # Step 12: wifi检�?  - id: step_12
     name: WiFiDetection
     type: engineer.test
     params:
@@ -312,8 +303,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 13: gnss检测
-  - id: step_13
+  # Step 13: gnss检�?  - id: step_13
     name: GNSSDetection
     type: engineer.test
     params:
@@ -321,8 +311,9 @@ steps:
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
-    timeout: 35000
-    retries: 1
+    timeout: 120000
+    retries: 3
+    retry_interval_ms: 5000
     condition: null
     expect: null
     on_failure: fail
@@ -366,8 +357,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 15: uwb检测
-  - id: step_15
+  # Step 15: uwb检�?  - id: step_15
     name: UWBDetection
     type: engineer.test
     params:
@@ -402,8 +392,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 17: 打开补光灯
-  - id: step_17
+  # Step 17: 打开补光�?  - id: step_17
     name: WakeUpHead
     type: engineer.test
     params:
@@ -420,8 +409,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # Step 18: 延时 100 秒
-  # - id: step_18
+  # # Step 18: 延时 100 �?  # - id: step_18
   #   name: DelayAfterPowerOn
   #   type: utility.delay
   #   params:
@@ -469,13 +457,12 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 21: 弹窗 - 唤醒大头，检测是否回答
-  - id: step_21
+  # Step 21: 弹窗 - 唤醒大头，检测是否回�?  - id: step_21
     name: UnplugNetworkConfirm
     type: utility.confirm
     params:
       title: '操作提示'
-      message: '唤醒大头，检测是否回答'
+      message: '唤醒大头，检测是否回�?
       confirm_text: '确认'
       allow_cancel: false
     timeout: null
@@ -487,8 +474,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # Step 22: 站立前趴姿检查
-  - id: step_22
+  # # Step 22: 站立前趴姿检�?  - id: step_22
     name: zeropointcalZero
     type: engineer.test
     params:
@@ -520,13 +506,12 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
  
-  # # Step 9: 弹窗 - 请将狗摆正
-  # - id: step_9
+  # # Step 9: 弹窗 - 请将狗摆�?  # - id: step_9
   #   name: PositionDogConfirm
   #   type: utility.confirm
   #   params:
   #     title: '操作提示'
-  #     message: '请将狗摆正'
+  #     message: '请将狗摆�?
   #     confirm_text: '确认'
   #     allow_cancel: false
   #   timeout: null
@@ -538,8 +523,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 24: 直线检测
-  - id: step_24
+  # Step 24: 直线检�?  - id: step_24
     name: StraightLineDetection
     type: engineer.test
     params:
@@ -556,8 +540,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 5: 延时 100 秒
-  - id: step_5
+  # Step 5: 延时 100 �?  - id: step_5
     name: DelayAfterPowerOn
     type: utility.delay
     params:
@@ -589,8 +572,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 26: 标志位
-  - id: step_26
+  # Step 26: 标志�?  - id: step_26
     name: PowerOff
     type: engineer.test
     params:
@@ -607,8 +589,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # Step 4: 延时 100 秒
-  # - id: step_4
+  # # Step 4: 延时 100 �?  # - id: step_4
   #   name: DelayAfterPowerOn
   #   type: utility.delay
   #   params:
@@ -642,8 +623,7 @@ steps:
 
 
 
-  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL）
-  - id: step_mes_2
+  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL�?  - id: step_mes_2
     name: MesEnd2UploadResult
     type: mes.upload_result
     params:

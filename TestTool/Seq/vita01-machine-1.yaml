@@ -1,7 +1,7 @@
 version: '1.0'
 metadata:
   name: vita01-machine-1
-  description: 'VITA 机器人整机测试流程'
+  description: 'VITA 机器人整机测试流�?
   author: 'TestTool'
   created_at: '2025-01-15T00:00:00.000000'
   product: Vita01
@@ -18,8 +18,7 @@ variables:
 
 steps:
 
-  # Step MES-0: MES初始化（MesInit）；失败即停测，不进入后续整机流程
-  - id: step_mes_0
+  # Step MES-0: MES初始化（MesInit）；失败即停测，不进入后续整机流�?  - id: step_mes_0
     name: MESInit
     type: mes.heartbeat
     params: {}
@@ -36,7 +35,7 @@ steps:
     type: scan.sn
     params:
       dialog_title: '扫描/输入产品SN'
-      hint: '请扫描/输入SN（共19位，且前5位为80100）后回车'
+      hint: '请扫�?输入SN（共19位，且前5位为80100）后回车'
       regex: '^80100[A-Z0-9]{14}$'
       timeout_ms: 60000
     timeout: 5000
@@ -50,7 +49,7 @@ steps:
 
   # Step 2: 进入工程模式
 
-  # Step MES-1: MesStart（按SN判站/获取工单）；失败即停测，不重试以免 MES 报错后仍继续
+  # Step MES-1: MesStart（按SN判站/获取工单）；失败即停测，不重试以�?MES 报错后仍继续
   - id: step_mes_1
     name: MesStartCheckStation
     type: mes.get_work_order
@@ -82,8 +81,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 2.5: 检查 S100 煲机告警（diagnostic + archive 必查；Slam/IMU 不拦截，舵机拦截）
-  - id: step_2.5_check_diagnostic_fault
+  # Step 2.5: 检�?S100 煲机告警（diagnostic + archive 必查；Slam/IMU 不拦截，舵机拦截�?  - id: step_2.5_check_diagnostic_fault
     name: CheckDiagnosticFault
     type: case.check_diagnostic_fault
     params:
@@ -98,7 +96,7 @@ steps:
       archive_dir: '/log/usr/archive'
       save_local: true
       local_output_dir: 'Result/diagnostic'
-      fail_message: '煲机时出现舵机异常请联系工程师处理'
+      fail_message: '煲机时出现舵机异常请联系工程师处�?
     timeout: 180000
     retries: 1
     condition: null
@@ -144,8 +142,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # Step 4: 读取机器狗版本
-  # - id: step_4
+  # # Step 4: 读取机器狗版�?  # - id: step_4
   #   name: ReadVersion
   #   type: engineer.test
   #   params:
@@ -180,8 +177,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 6.5: 探测 S100 是否已加密（供 CreateDeviceJson 选用 encrypted / not_encrypted 出厂版本）
-  - id: step_probe_s100_encrypted
+  # Step 6.5: 探测 S100 是否已加密（�?CreateDeviceJson 选用 encrypted / not_encrypted 出厂版本�?  - id: step_probe_s100_encrypted
     name: ProbeS100EncryptedForDeviceJson
     type: case.probe_s100_provision
     params:
@@ -222,8 +218,8 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 8: 将 JSON 推送到狗上
-  # 注意：transfer=2,<addrA>,<addrB>% 表示从 addrA 推送到 addrB
+  # Step 8: �?JSON 推送到狗上
+  # 注意：transfer=2,<addrA>,<addrB>% 表示�?addrA 推送到 addrB
   - id: step_8
     name: UploadJsonToRobot
     type: engineer.test
@@ -241,9 +237,8 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
  
-  # Step 9: 将 JSON 推送到云端
-  # 注意：执行 JSON 文件的云端上传操作，完成测试数据的云端备份
-  - id: step_9
+  # Step 9: �?JSON 推送到云端
+  # 注意：执�?JSON 文件的云端上传操作，完成测试数据的云端备�?  - id: step_9
     name: UploadJsonToCloud
     type: engineer.test
     params:
@@ -260,8 +255,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 10.1: 读取扰码（依赖 Step 6 获取到的 imei）
-  - id: step_10.1
+  # Step 10.1: 读取扰码（依�?Step 6 获取到的 imei�?  - id: step_10.1
     name: ReadScramble
     type: engineer.test
     params:
@@ -278,8 +272,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 8: 蓝牙检测
-  - id: step_8
+  # Step 8: 蓝牙检�?  - id: step_8
     name: BluetoothTest
     type: engineer.test
     params:
@@ -296,8 +289,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 10: WiFi 检测
-  - id: step_10
+  # Step 10: WiFi 检�?  - id: step_10
     name: WiFiTest
     type: engineer.test
     params:
@@ -314,8 +306,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 11: GNSS 检测
-  - id: step_11
+  # Step 11: GNSS 检�?  - id: step_11
     name: GNSSTest
     type: engineer.test
     params:
@@ -323,8 +314,9 @@ steps:
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
-    timeout: 35000
-    retries: 1
+    timeout: 120000
+    retries: 3
+    retry_interval_ms: 5000
     condition: null
     expect: null
     on_failure: fail
@@ -332,8 +324,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 11.1: WiFi（SN 从云端拉取 ssid/password 写入 autoconnect）
-  - id: step_11.1
+  # Step 11.1: WiFi（SN 从云端拉�?ssid/password 写入 autoconnect�?  - id: step_11.1
     name: WiFiAutoconnectBySn
     type: engineer.test
     params:
@@ -350,13 +341,12 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 12: 弹窗 - 请将网线拔掉，并等待机器狗行走
-  - id: step_13
+  # Step 12: 弹窗 - 请将网线拔掉，并等待机器狗行�?  - id: step_13
     name: UnplugNetworkConfirm
     type: utility.confirm
     params:
       title: '操作提示'
-      message: '请将充电底座放到狗身下'
+      message: '请将充电底座放到狗身�?
       confirm_text: '确认'
       allow_cancel: false
     timeout: null
@@ -368,8 +358,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 13: 站起来
-  - id: step_14
+  # Step 13: 站起�?  - id: step_14
     name: StandUp
     type: engineer.test
     params:
@@ -386,8 +375,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # 步骤16: 休息 3 秒
-  # - id: step_16
+  # # 步骤16: 休息 3 �?  # - id: step_16
   #   name: WaitAfterPowerOn
   #   type: utility.delay
   #   params:
@@ -401,8 +389,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # Step 17: 向前走
-  # - id: step_17
+  # # Step 17: 向前�?  # - id: step_17
   #   name: MoveForward
   #   type: engineer.test
   #   params:
@@ -420,13 +407,13 @@ steps:
   #   manual_judgment_config: null
 
   # # Step 18: 将狗放在充电桩上 - 操作提示
-  # # 注意：系统弹出提示信息对话框，显示 "请移动如二维码"
+  # # 注意：系统弹出提示信息对话框，显�?"请移动如二维�?
   # - id: step_18
   #   name: PlaceOnCharger
   #   type: utility.confirm
   #   params:
-  #     title: '充电桩操作提示'
-  #     message: '请移动如二维码'
+  #     title: '充电桩操作提�?
+  #     message: '请移动如二维�?
   #     confirm_text: '确认'
   #     allow_cancel: false
   #   timeout: null
@@ -438,7 +425,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 13.5: 站立后等待 5 秒再拍 ircamera
+  # Step 13.5: 站立后等�?5 秒再�?ircamera
   - id: step_14.5_wait_before_ircamera
     name: WaitAfterStandUpBeforeIRCamera
     type: utility.delay
@@ -453,8 +440,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 14: 拍摄一张 ircamera 的图片
-  - id: step_15
+  # Step 14: 拍摄一�?ircamera 的图�?  - id: step_15
     name: IRCameraCapture
     type: engineer.test
     params:
@@ -471,13 +457,12 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 15.0: 人工确认红外照片非全黑
-  - id: step_15.0_ir_photo_not_black
+  # Step 15.0: 人工确认红外照片非全�?  - id: step_15.0_ir_photo_not_black
     name: IRPhotoNotBlackConfirm
     type: utility.confirm
     params:
       title: '红外照片确认'
-      message: '请查看刚保存的红外照片，确认画面不为全黑。若照片全黑请勿继续，并联系工程师。'
+      message: '请查看刚保存的红外照片，确认画面不为全黑。若照片全黑请勿继续，并联系工程师�?
       confirm_text: '确认（非黑）'
       cancel_text: '取消'
       allow_cancel: true
@@ -490,8 +475,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 15.1: 拍照后等待校验服务就绪（降低 ircamera=2 首次 1302 超时）
-  - id: step_15.1_wait_ir_verify
+  # Step 15.1: 拍照后等待校验服务就绪（降低 ircamera=2 首次 1302 超时�?  - id: step_15.1_wait_ir_verify
     name: WaitBeforeIRCameraVerify
     type: utility.delay
     params:
@@ -505,8 +489,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 15.2: 红外相机验证（检测站）
-  - id: step_15.2
+  # Step 15.2: 红外相机验证（检测站�?  - id: step_15.2
     name: IRCameraVerify
     type: engineer.test
     params:
@@ -523,8 +506,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 15.3: 打开补光灯（fill_light=1）
-  - id: step_15.3_fill_light_on
+  # Step 15.3: 打开补光灯（fill_light=1�?  - id: step_15.3_fill_light_on
     name: FillLightOn
     type: engineer.test
     params:
@@ -546,9 +528,9 @@ steps:
     name: FillLightOnConfirm
     type: utility.confirm
     params:
-      title: '补光灯确认'
-      message: '请确认补光灯已正常亮起。若未亮请勿继续，并联系工程师。'
-      confirm_text: '已亮，确认'
+      title: '补光灯确�?
+      message: '请确认补光灯已正常亮起。若未亮请勿继续，并联系工程师�?
+      confirm_text: '已亮，确�?
       cancel_text: '未亮'
       allow_cancel: true
     timeout: 300000
@@ -560,8 +542,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 15.5: 关闭补光灯（fill_light=0）
-  - id: step_15.5_fill_light_off
+  # Step 15.5: 关闭补光灯（fill_light=0�?  - id: step_15.5_fill_light_off
     name: FillLightOff
     type: engineer.test
     params:
@@ -596,8 +577,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 15: 上传标定数据到电脑
-  - id: step_16
+  # Step 15: 上传标定数据到电�?  - id: step_16
     name: UploadCalibData
     type: engineer.test
     params:
@@ -611,7 +591,7 @@ steps:
     expect: null
     on_failure: fail
 
-  # Step 15.1: 上传 S100 舵机标定数据（/app_param/servo/）到 cal 目录
+  # Step 15.1: 上传 S100 舵机标定数据�?app_param/servo/）到 cal 目录
   - id: step_16.1
     name: UploadServoCalibData
     type: engineer.test
@@ -626,8 +606,7 @@ steps:
     expect: null
     on_failure: fail
 
-  # 步骤16: 休息 3 秒
-  - id: step_17
+  # 步骤16: 休息 3 �?  - id: step_17
     name: WaitAfterPowerOn
     type: utility.delay
     params:
@@ -674,8 +653,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 18: Efuse 写入 SN（efuse=1 为写入序列号）
-  - id: step_18
+  # Step 18: Efuse 写入 SN（efuse=1 为写入序列号�?  - id: step_18
     name: WriteEfuseSN
     type: engineer.test
     params:
@@ -692,8 +670,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 18.05: S100 重启 sn_server（efuse 写 SN 后；直连 S100，不经 X5）
-  - id: step_18.05_restart_sn_server
+  # Step 18.05: S100 重启 sn_server（efuse �?SN 后；直连 S100，不�?X5�?  - id: step_18.05_restart_sn_server
     name: RestartSnServerOnS100
     type: utility.ssh_exec
     params:
@@ -716,8 +693,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 18.06: S100 执行 query_sn 确认 SN 写入成功（stdout 须含扫描 SN）
-  - id: step_18.06_verify_query_sn
+  # Step 18.06: S100 执行 query_sn 确认 SN 写入成功（stdout 须含扫描 SN�?  - id: step_18.06_verify_query_sn
     name: VerifyQuerySnOnS100
     type: utility.ssh_exec
     params:
@@ -741,8 +717,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 18.1: X5 重启 speech 服务（query_sn 校验通过后；经 S100 跳板 SSH）
-  - id: step_18.1_restart_speech
+  # Step 18.1: X5 重启 speech 服务（query_sn 校验通过后；�?S100 跳板 SSH�?  - id: step_18.1_restart_speech
     name: RestartSpeechOnX5
     type: utility.ssh_exec
     params:
@@ -767,8 +742,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 18.21: X5 打开百度唤醒 / speech_service 识别模式（经 S100 跳板 SSH）
-  - id: step_18.21_speech_baidu_mode
+  # Step 18.21: X5 打开百度唤醒 / speech_service 识别模式（经 S100 跳板 SSH�?  - id: step_18.21_speech_baidu_mode
     name: X5SpeechBaiduWakeMode
     type: utility.ssh_exec
     params:
@@ -794,8 +768,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 18.22: X5 打开连续对话 / 连续命令词识别
-  - id: step_18.22_speech_continuous_dialog
+  # Step 18.22: X5 打开连续对话 / 连续命令词识�?  - id: step_18.22_speech_continuous_dialog
     name: X5SpeechContinuousDialog
     type: utility.ssh_exec
     params:
@@ -848,8 +821,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 18.2: 拉取语音 license（tts=0）
-  - id: step_18.2_voice_license
+  # Step 18.2: 拉取语音 license（tts=0�?  - id: step_18.2_voice_license
     name: PullVoiceLicense
     type: engineer.test
     params:
@@ -866,15 +838,14 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 18.3: 确认是否听到「大头起床了」音效
-  - id: step_18.3_wake_audio_confirm
+  # Step 18.3: 确认是否听到「大头起床了」音�?  - id: step_18.3_wake_audio_confirm
     name: HearWakeHeadAudioConfirm
     type: utility.confirm
     params:
-      title: '语音：大头起床'
-      message: '请确认是否听到「大头起床了」语音提示？未听到请勿继续，并联系工程师。'
-      confirm_text: '听到了'
-      cancel_text: '未听到'
+      title: '语音：大头起�?
+      message: '请确认是否听到「大头起床了」语音提示？未听到请勿继续，并联系工程师�?
+      confirm_text: '听到�?
+      cancel_text: '未听�?
       allow_cancel: true
     timeout: 300000
     retries: 0
@@ -885,8 +856,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 18.4: 唤醒大头（tts=2）
-  - id: step_18.4_wake_head
+  # Step 18.4: 唤醒大头（tts=2�?  - id: step_18.4_wake_head
     name: WakeUpHead
     type: engineer.test
     params:
@@ -909,7 +879,7 @@ steps:
     type: utility.confirm
     params:
       title: '语音：问天气'
-      message: '请对机器狗说「大头，今天天气怎么样」，确认已提问且收到大头正确回复后点击「确认」继续。'
+      message: '请对机器狗说「大头，今天天气怎么样」，确认已提问且收到大头正确回复后点击「确认」继续�?
       confirm_text: '确认'
       cancel_text: '取消'
       allow_cancel: true
@@ -974,8 +944,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 22: Efuse 读取 SN（efuse=0 为获取序列号）
-  - id: step_22
+  # Step 22: Efuse 读取 SN（efuse=0 为获取序列号�?  - id: step_22
     name: ReadEfuseSN
     type: engineer.test
     params:
@@ -992,8 +961,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 22.1: 校验 EFUSE 读回的 SN 与扫描 SN 一致
-  - id: step_22.1
+  # Step 22.1: 校验 EFUSE 读回�?SN 与扫�?SN 一�?  - id: step_22.1
     name: CompareEfuseSN
     type: case.compare_efuse_sn
     params:
@@ -1007,8 +975,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # 步骤5: 休息 3 秒
-  # - id: step_14.1
+  # # 步骤5: 休息 3 �?  # - id: step_14.1
   #   name: WaitAfterPowerOn
   #   type: utility.delay
   #   params:
@@ -1040,8 +1007,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 24: 延时 100 秒
-  - id: step_24
+  # Step 24: 延时 100 �?  - id: step_24
     name: DelayAfterPowerOn
     type: utility.delay
     params:
@@ -1055,7 +1021,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 25: stage2设置为1 (stage=1,6,1%)
+  # Step 25: stage2设置�? (stage=1,6,1%)
   - id: step_25
     name: ConfirmFusionFlag
     type: engineer.test
@@ -1107,7 +1073,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 26.1: 下电后打印 IMEI + 扰码 标签
+  # Step 26.1: 下电后打�?IMEI + 扰码 标签
   - id: step_26.1
     name: PrintImeiScrambleLabel
     type: printer.zebra.image
@@ -1118,7 +1084,7 @@ steps:
       imei: '${imei}'
       scramble: '${scramble}'
       imei_font_source: 'Result/font_sources/vbot_zip/Vbot Sans'
-      scramble_font_source: 'Result/font_sources/许可标志样式矢量图及字体库'
+      scramble_font_source: 'Result/font_sources/许可标志样式矢量图及字体�?
       save_preview: true
       preview: false
     timeout: 15000
@@ -1130,8 +1096,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL）
-  - id: step_mes_2
+  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL�?  - id: step_mes_2
     name: MesEnd2UploadResult
     type: mes.upload_result
     params:

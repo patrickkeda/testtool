@@ -398,6 +398,12 @@ class GenericCommandHandler:
             # 使用通用处理器
             return await self._generic_handler(client, params, command_template)
     
+    @staticmethod
+    def _is_gnss_not_ready_message(message: str) -> bool:
+        """机端 GNSS 资源尚未初始化完成时的瞬时失败（含常见拼写变体）。"""
+        text = (message or "").lower()
+        return ("not finished" in text) and ("init" in text)
+
     async def _generic_handler(self, client: EngineerServiceClient, params: TestCaseParams, command_template: CommandTemplate) -> bool:
         """通用处理器 - 处理所有标准命令"""
         try:
@@ -408,56 +414,76 @@ class GenericCommandHandler:
             command_str = f"{params.command_name}={','.join(params.parameters)}%"
             print(f"   发送命令: {command_str}")
             
-            # 发送命令到服务器
-            command = {
-                "command": command_str,
-                "params": all_params,
-                "timestamp": int(time.time() * 1000)
-            }
-            print(f"   发送命令: {json.dumps(command, ensure_ascii=False)}")
+            # GNSS 初始化竞态：机端常返回 "gnss resource is not finished initializing"
+            # 在客户端等待重试，避免产线一闪而过的失败。
+            max_attempts = 6 if params.command_name == "gnss" else 1
+            wait_s = 5.0
 
-            response_str = await self._send_command(client, command)
-            response = json.loads(response_str)
-            
-            # 检查是否有自定义响应处理器
-            response_handler = self.command_registry.get_response_handler(params.command_name)
-            if response_handler:
-                print(f"   使用自定义响应处理器: {params.command_name}")
-                return await response_handler(response, params)
-            
-            # 默认响应处理
-            if response.get("status") == ResponseStatus.SUCCESS.value:
-                print(f"命令执行成功: {response.get('message', '')}")
-                data_str = response.get("data", "")
-                
-                # 如果是 base64 编码的二进制数据，先解码
-                if response.get("encoding") == "base64" and response.get("has_binary_data", False):
-                    decoded_data = decode_base64(data_str)
-                    # 尝试将字节数据转换为字符串
-                    try:
-                        data_str = decoded_data.decode('utf-8')
-                    except UnicodeDecodeError:
-                        # 如果不是文本数据，直接使用字节数据
-                        data_str = decoded_data
-                
-                if data_str:
-                    try:
-                        # 尝试解析为 JSON
-                        if isinstance(data_str, bytes):
-                            parsed_data = json.loads(data_str.decode('utf-8'))
-                        else:
-                            parsed_data = json.loads(data_str)
-                        print(f"   返回数据: \n {json.dumps(parsed_data, indent=4)}")
-                    except (json.JSONDecodeError, UnicodeDecodeError):
-                        # 如果不是 JSON，直接打印
-                        if isinstance(data_str, bytes):
-                            print(f"   返回数据 (二进制): {len(data_str)} 字节")
-                        else:
-                            print(f"   返回数据: \n {data_str}")
-                return True
-            else:
-                print(f"命令执行失败: {response.get('message', '')}")
+            for attempt in range(max_attempts):
+                command = {
+                    "command": command_str,
+                    "params": all_params,
+                    "timestamp": int(time.time() * 1000)
+                }
+                print(f"   发送命令: {json.dumps(command, ensure_ascii=False)}")
+
+                response_str = await self._send_command(client, command)
+                response = json.loads(response_str)
+
+                # 检查是否有自定义响应处理器
+                response_handler = self.command_registry.get_response_handler(params.command_name)
+                if response_handler:
+                    print(f"   使用自定义响应处理器: {params.command_name}")
+                    return await response_handler(response, params)
+
+                # 默认响应处理
+                if response.get("status") == ResponseStatus.SUCCESS.value:
+                    print(f"命令执行成功: {response.get('message', '')}")
+                    data_str = response.get("data", "")
+
+                    # 如果是 base64 编码的二进制数据，先解码
+                    if response.get("encoding") == "base64" and response.get("has_binary_data", False):
+                        decoded_data = decode_base64(data_str)
+                        # 尝试将字节数据转换为字符串
+                        try:
+                            data_str = decoded_data.decode('utf-8')
+                        except UnicodeDecodeError:
+                            # 如果不是文本数据，直接使用字节数据
+                            data_str = decoded_data
+
+                    if data_str:
+                        try:
+                            # 尝试解析为 JSON
+                            if isinstance(data_str, bytes):
+                                parsed_data = json.loads(data_str.decode('utf-8'))
+                            else:
+                                parsed_data = json.loads(data_str)
+                            print(f"   返回数据: \n {json.dumps(parsed_data, indent=4)}")
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            # 如果不是 JSON，直接打印
+                            if isinstance(data_str, bytes):
+                                print(f"   返回数据 (二进制): {len(data_str)} 字节")
+                            else:
+                                print(f"   返回数据: \n {data_str}")
+                    return True
+
+                fail_msg = str(response.get("message", "") or "")
+                if (
+                    params.command_name == "gnss"
+                    and self._is_gnss_not_ready_message(fail_msg)
+                    and attempt < max_attempts - 1
+                ):
+                    print(
+                        f"GNSS 资源尚未初始化完成，{wait_s:.0f}s 后重试 "
+                        f"({attempt + 1}/{max_attempts}): {fail_msg}"
+                    )
+                    await asyncio.sleep(wait_s)
+                    continue
+
+                print(f"命令执行失败: {fail_msg}")
                 return False
+
+            return False
                 
         except Exception as e:
             print(f"命令执行异常: {e}")

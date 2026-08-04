@@ -1,7 +1,7 @@
 version: '1.0'
 metadata:
   name: vita01-machine-1
-  description: 'VITA 机器人整机测试流程'
+  description: 'VITA 机器人整机测试流�?
   author: 'TestTool'
   created_at: '2025-01-15T00:00:00.000000'
   product: Vita01
@@ -17,8 +17,7 @@ variables:
 
 steps:
 
-  # Step MES-0: MES初始化（MesInit）
-  - id: step_mes_0
+  # Step MES-0: MES初始化（MesInit�?  - id: step_mes_0
     name: MESInit
     type: mes.heartbeat
     params: {}
@@ -35,7 +34,7 @@ steps:
     type: scan.sn
     params:
       dialog_title: '扫描/输入产品SN'
-      hint: '请扫描/输入SN（共19位，且前5位为80100）后回车'
+      hint: '请扫�?输入SN（共19位，且前5位为80100）后回车'
       regex: '^80100[A-Z0-9]{14}$'
       timeout_ms: 60000
     timeout: 5000
@@ -49,8 +48,7 @@ steps:
 
   # Step 2: 进入工程模式
 
-  # Step MES-1: MesStart（按SN判站/获取工单）
-  - id: step_mes_1
+  # Step MES-1: MesStart（按SN判站/获取工单�?  - id: step_mes_1
     name: MesStartCheckStation
     type: mes.get_work_order
     params:
@@ -117,8 +115,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # Step 4: 读取机器狗版本
-  # - id: step_4
+  # # Step 4: 读取机器狗版�?  # - id: step_4
   #   name: ReadVersion
   #   type: engineer.test
   #   params:
@@ -156,7 +153,7 @@ steps:
   # Step 7: 创建 device.json 文件
   # 从前面步骤的结果中提取数据并创建 JSON 文件
   # 文件路径: TestTool\Result\upload\${sn}\device.json
-  # factoryDownloadVersion/factoryInstallVersion: 见 config.yaml device_json
+  # factoryDownloadVersion/factoryInstallVersion: �?config.yaml device_json
   - id: step_7
     name: CreateDeviceJson
     type: case.create_device_json
@@ -172,8 +169,8 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 8: 将 JSON 推送到狗上
-  # 注意：transfer=2,<addrA>,<addrB>% 表示从 addrA 推送到 addrB
+  # Step 8: �?JSON 推送到狗上
+  # 注意：transfer=2,<addrA>,<addrB>% 表示�?addrA 推送到 addrB
   - id: step_8
     name: UploadJsonToRobot
     type: engineer.test
@@ -191,9 +188,8 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
  
-  # Step 9: 将 JSON 推送到云端
-  # 注意：执行 JSON 文件的云端上传操作，完成测试数据的云端备份
-  - id: step_9
+  # Step 9: �?JSON 推送到云端
+  # 注意：执�?JSON 文件的云端上传操作，完成测试数据的云端备�?  - id: step_9
     name: UploadJsonToCloud
     type: engineer.test
     params:
@@ -210,8 +206,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 10.1: 读取扰码（依赖 Step 6 获取到的 imei）
-  - id: step_10.1
+  # Step 10.1: 读取扰码（依�?Step 6 获取到的 imei�?  - id: step_10.1
     name: ReadScramble
     type: engineer.test
     params:
@@ -239,7 +234,7 @@ steps:
   #     imei: '${imei}'
   #     scramble: '${scramble}'
   #     imei_font_source: 'Result/font_sources/vbot_zip/Vbot Sans'
-  #     scramble_font_source: 'Result/font_sources/许可标志样式矢量图及字体库'
+  #     scramble_font_source: 'Result/font_sources/许可标志样式矢量图及字体�?
   #     save_preview: true
   #     preview: false
   #   timeout: 15000
@@ -251,8 +246,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 8: 蓝牙检测
-  - id: step_8
+  # Step 8: 蓝牙检�?  - id: step_8
     name: BluetoothTest
     type: engineer.test
     params:
@@ -269,8 +263,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 10: WiFi 检测
-  - id: step_10
+  # Step 10: WiFi 检�?  - id: step_10
     name: WiFiTest
     type: engineer.test
     params:
@@ -287,8 +280,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 11: GNSS 检测
-  - id: step_11
+  # Step 11: GNSS 检�?  - id: step_11
     name: GNSSTest
     type: engineer.test
     params:
@@ -296,8 +288,9 @@ steps:
       robot_ip: '${robot_ip}'
       port: ${robot_port}
       timeout: 30
-    timeout: 35000
-    retries: 1
+    timeout: 120000
+    retries: 3
+    retry_interval_ms: 5000
     condition: null
     expect: null
     on_failure: fail
@@ -305,8 +298,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 11.1: WiFi（SN 从云端拉取 ssid/password 写入 autoconnect）
-  - id: step_11.1
+  # Step 11.1: WiFi（SN 从云端拉�?ssid/password 写入 autoconnect�?  - id: step_11.1
     name: WiFiAutoconnectBySn
     type: engineer.test
     params:
@@ -323,13 +315,12 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # Step 12: 弹窗 - 请将网线拔掉，并等待机器狗行走
-  # - id: step_13
+  # # Step 12: 弹窗 - 请将网线拔掉，并等待机器狗行�?  # - id: step_13
   #   name: UnplugNetworkConfirm
   #   type: utility.confirm
   #   params:
   #     title: '操作提示'
-  #     message: '请将充电底座放到狗身下'
+  #     message: '请将充电底座放到狗身�?
   #     confirm_text: '确认'
   #     allow_cancel: false
   #   timeout: null
@@ -341,8 +332,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # Step 13: 站起来
-  # - id: step_14
+  # # Step 13: 站起�?  # - id: step_14
   #   name: StandUp
   #   type: engineer.test
   #   params:
@@ -359,8 +349,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # 步骤16: 休息 3 秒
-  # - id: step_16
+  # # 步骤16: 休息 3 �?  # - id: step_16
   #   name: WaitAfterPowerOn
   #   type: utility.delay
   #   params:
@@ -374,8 +363,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # Step 17: 向前走
-  # - id: step_17
+  # # Step 17: 向前�?  # - id: step_17
   #   name: MoveForward
   #   type: engineer.test
   #   params:
@@ -393,13 +381,13 @@ steps:
   #   manual_judgment_config: null
 
   # # Step 18: 将狗放在充电桩上 - 操作提示
-  # # 注意：系统弹出提示信息对话框，显示 "请移动如二维码"
+  # # 注意：系统弹出提示信息对话框，显�?"请移动如二维�?
   # - id: step_18
   #   name: PlaceOnCharger
   #   type: utility.confirm
   #   params:
-  #     title: '充电桩操作提示'
-  #     message: '请移动如二维码'
+  #     title: '充电桩操作提�?
+  #     message: '请移动如二维�?
   #     confirm_text: '确认'
   #     allow_cancel: false
   #   timeout: null
@@ -411,8 +399,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # Step 14: 拍摄一张 ircamera 的图片
-  # - id: step_15
+  # # Step 14: 拍摄一�?ircamera 的图�?  # - id: step_15
   #   name: IRCameraCapture
   #   type: engineer.test
   #   params:
@@ -429,8 +416,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # Step 15.2: 红外相机验证（检测站）
-  # - id: step_15.2
+  # # Step 15.2: 红外相机验证（检测站�?  # - id: step_15.2
   #   name: IRCameraVerify
   #   type: engineer.test
   #   params:
@@ -447,8 +433,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # 拉取语音 license（tts=0），唤醒大头（tts=2）紧接其后；两条语音确认弹窗在 laydown 前
-  - id: step_15_voice_license
+  # 拉取语音 license（tts=0），唤醒大头（tts=2）紧接其后；两条语音确认弹窗�?laydown �?  - id: step_15_voice_license
     name: PullVoiceLicense
     type: engineer.test
     params:
@@ -501,8 +486,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 15: 上传标定数据到电脑
-  - id: step_16
+  # Step 15: 上传标定数据到电�?  - id: step_16
     name: UploadCalibData
     type: engineer.test
     params:
@@ -516,8 +500,7 @@ steps:
     expect: null
     on_failure: fail
 
-  # 步骤16: 休息 3 秒
-  - id: step_17
+  # 步骤16: 休息 3 �?  - id: step_17
     name: WaitAfterPowerOn
     type: utility.delay
     params:
@@ -531,8 +514,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 18: Efuse 写入 SN（efuse=1 为写入序列号）
-  - id: step_18
+  # Step 18: Efuse 写入 SN（efuse=1 为写入序列号�?  - id: step_18
     name: WriteEfuseSN
     type: engineer.test
     params:
@@ -601,8 +583,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 22: Efuse 读取 SN（efuse=0 为获取序列号）
-  - id: step_22
+  # Step 22: Efuse 读取 SN（efuse=0 为获取序列号�?  - id: step_22
     name: ReadEfuseSN
     type: engineer.test
     params:
@@ -619,8 +600,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step 22.1: 校验 EFUSE 读回的 SN 与扫描 SN 一致
-  - id: step_22.1
+  # Step 22.1: 校验 EFUSE 读回�?SN 与扫�?SN 一�?  - id: step_22.1
     name: CompareEfuseSN
     type: case.compare_efuse_sn
     params:
@@ -634,8 +614,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # # 步骤5: 休息 3 秒
-  # - id: step_14.1
+  # # 步骤5: 休息 3 �?  # - id: step_14.1
   #   name: WaitAfterPowerOn
   #   type: utility.delay
   #   params:
@@ -654,8 +633,8 @@ steps:
     name: VoicePromptWakeHead
     type: utility.confirm
     params:
-      title: '语音：大头大头唤醒'
-      message: '请对机器狗说「大头大头唤醒」，确认已说完或已听到正确响应后点击「确认」继续。'
+      title: '语音：大头大头唤�?
+      message: '请对机器狗说「大头大头唤醒」，确认已说完或已听到正确响应后点击「确认」继续�?
       confirm_text: '确认'
       cancel_text: '取消'
       allow_cancel: true
@@ -673,7 +652,7 @@ steps:
     type: utility.confirm
     params:
       title: '语音：问天气'
-      message: '请对机器狗说「今天天气怎么样」（或等价问法），确认已说完或已听到正确响应后点击「确认」继续。'
+      message: '请对机器狗说「今天天气怎么样」（或等价问法），确认已说完或已听到正确响应后点击「确认」继续�?
       confirm_text: '确认'
       cancel_text: '取消'
       allow_cancel: true
@@ -704,8 +683,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # # Step 24: 延时 100 秒
-  # - id: step_24
+  # # Step 24: 延时 100 �?  # - id: step_24
   #   name: DelayAfterPowerOn
   #   type: utility.delay
   #   params:
@@ -719,7 +697,7 @@ steps:
   #   state_measurement_config: null
   #   manual_judgment_config: null
 
-  # Step 25: stage2设置为1 (stage=1,6,1%)
+  # Step 25: stage2设置�? (stage=1,6,1%)
   - id: step_25
     name: ConfirmFusionFlag
     type: engineer.test
@@ -735,8 +713,7 @@ steps:
     expect: null
     on_failure: fail
 
-  # 下电前设置语音音量（tts=3% 默认 60；指定音量示例 tts=3,volume=50%）
-  - id: step_25.5
+  # 下电前设置语音音量（tts=3% 默认 60；指定音量示�?tts=3,volume=50%�?  - id: step_25.5
     name: SetTtsVolume60
     type: engineer.test
     params:
@@ -771,8 +748,7 @@ steps:
     state_measurement_config: null
     manual_judgment_config: null
 
-  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL）
-  - id: step_mes_2
+  # Step MES-2: MesEnd上传测试结果（自动按测试最终结果上传PASS/FAIL�?  - id: step_mes_2
     name: MesEnd2UploadResult
     type: mes.upload_result
     params:

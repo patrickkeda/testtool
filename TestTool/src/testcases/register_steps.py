@@ -49,6 +49,7 @@ from .steps.cases.pcan import (
 )
 from .steps.cases.create_device_json import CreateDeviceJsonStep
 from .steps.cases.compare_version import CompareVersionStep
+from .steps.cases.compare_rtc import CompareRtcStep
 from .steps.cases.check_ota_packages import CheckOtaPackagesStep
 from .steps.cases.compare_efuse_sn import CompareEfuseSnStep
 from .steps.cases.probe_s100_provision import ProbeS100ProvisionStep
@@ -322,6 +323,12 @@ def register_all_steps():
         step_type="case.compare_version",
         step_class=CompareVersionStep,
         aliases=["compare_version", "version_compare", "check_version"]
+    )
+
+    register(
+        step_type="case.compare_rtc",
+        step_class=CompareRtcStep,
+        aliases=["compare_rtc", "rtc_compare", "check_rtc_time"],
     )
 
     register(

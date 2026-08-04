@@ -1,8 +1,7 @@
 version: '1.0'
 metadata:
   name: vita01-headmodule-1
-  description: VITA 机器人狗头模组测试序列
-  author: TestTool
+  description: VITA 机器人狗头模组测试序�?  author: TestTool
   created_at: '2025-12-20T00:00:00.000000'
   product: Vita01
   station: HEADMODULE
@@ -88,7 +87,7 @@ steps:
     value: 1
     unit_id: ${plc_unit_id}
     use_coil: true
-    description: 气缸固定狗头：写寄存器 002049 (R0) = 1
+    description: 气缸固定狗头：写寄存�?002049 (R0) = 1
   timeout: 5000
   retries: 2
   retry_interval_ms: 1000
@@ -106,7 +105,7 @@ steps:
     value: 1
     unit_id: ${plc_unit_id}
     use_coil: true
-    description: 狗头上电：写寄存器 002053 (R4) = 1
+    description: 狗头上电：写寄存�?002053 (R4) = 1
   timeout: 5000
   retries: 2
   retry_interval_ms: 1000
@@ -124,7 +123,7 @@ steps:
     value: 1
     unit_id: ${plc_unit_id}
     use_coil: true
-    description: S100上电：写寄存器 002052 (R3) = 1
+    description: S100上电：写寄存�?002052 (R3) = 1
   timeout: 5000
   retries: 2
   retry_interval_ms: 1000
@@ -439,9 +438,9 @@ steps:
     robot_ip: ${robot_ip}
     port: ${robot_port}
     timeout: 30
-  timeout: 35000
-  retries: 1
-  retry_interval_ms: 1000
+  timeout: 120000
+  retries: 3
+  retry_interval_ms: 5000
   condition: null
   expect: null
   on_failure: fail
@@ -456,7 +455,7 @@ steps:
     value: 1
     unit_id: ${plc_unit_id}
     use_coil: true
-    description: 气缸解除：写寄存器 002050 (R1) = 1
+    description: 气缸解除：写寄存�?002050 (R1) = 1
   timeout: 5000
   retries: 2
   retry_interval_ms: 1000

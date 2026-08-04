@@ -68,6 +68,23 @@ steps:
   at_config: null
   state_measurement_config: null
   manual_judgment_config: null
+- id: step_2b_rtc
+  name: CompareRtcWithPc
+  type: case.compare_rtc
+  params:
+    command: rtc=0%
+    robot_ip: ${robot_ip}
+    port: ${robot_port}
+    timeout: 30
+    max_diff_sec: 300
+  timeout: 45000
+  retries: 1
+  condition: null
+  expect: null
+  on_failure: fail
+  at_config: null
+  state_measurement_config: null
+  manual_judgment_config: null
 - id: step_3
   name: CheckDogHeadFlag
   type: engineer.test
@@ -259,54 +276,6 @@ steps:
   condition: null
   expect: null
   on_failure: fail
-  at_config: null
-  state_measurement_config: null
-  manual_judgment_config: null
-- id: step_11b
-  name: RobotDogReceiptBaseline
-  type: engineer.test
-  params:
-    command: tactile=0,0%
-    robot_ip: ${robot_ip}
-    port: ${robot_port}
-    timeout: 30
-  timeout: 35000
-  retries: 1
-  condition: null
-  expect: null
-  on_failure: continue
-  at_config: null
-  state_measurement_config: null
-  manual_judgment_config: null
-- id: step_12
-  name: PlugNetworkConfirm
-  type: utility.confirm
-  params:
-    title: 操作提示
-    message: 请在按确认键后10秒抚摸狗屁股
-    confirm_text: 确认
-    allow_cancel: false
-  timeout: null
-  retries: 0
-  condition: null
-  expect: null
-  on_failure: continue
-  at_config: null
-  state_measurement_config: null
-  manual_judgment_config: null
-- id: step_13
-  name: RobotDogReceipt
-  type: engineer.test
-  params:
-    command: tactile=0,1%
-    robot_ip: ${robot_ip}
-    port: ${robot_port}
-    timeout: 30
-  timeout: 35000
-  retries: 1
-  condition: null
-  expect: null
-  on_failure: continue
   at_config: null
   state_measurement_config: null
   manual_judgment_config: null
