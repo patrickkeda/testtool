@@ -529,6 +529,22 @@ class PortWorker(QObject):
         self._running = False
         self._logger.info("所有测试步骤执行完成")
 
+    def _context_has_sn(self) -> bool:
+        """是否已有有效产品 SN（与 mes_steps._ctx_sn 判定对齐；无 SN 则不应走 MesEnd2）。"""
+        ctx = self.context
+        if not ctx:
+            return False
+        if hasattr(ctx, "get_sn"):
+            got = str(ctx.get_sn() or "").strip()
+            if got and got.upper() != "NULL":
+                return True
+        if hasattr(ctx, "get_data"):
+            sn = str(ctx.get_data("sn") or "").strip()
+            if sn and sn.upper() != "NULL":
+                return True
+        sn = str(getattr(ctx, "sn", "") or "").strip()
+        return bool(sn and sn.upper() != "NULL")
+
     def _run_mes_end_after_failure(
         self,
         steps: List[Any],
@@ -545,6 +561,15 @@ class PortWorker(QObject):
                 self._logger.info("单步模式：跳过失败直跳 MesEnd（不上报 MES）")
                 return False
         try:
+            # 无 SN：尚未扫码/未进入过站，MesEnd2 无业务意义，避免界面出现 SN_EMPTY 的假失败
+            if not self._context_has_sn():
+                self._logger.info(
+                    "无有效 SN，跳过失败直跳 MesEnd2（step=%s/%s）",
+                    failed_step_id,
+                    failed_step_name,
+                )
+                return False
+
             mes_end_cfg = next((s for s in steps if getattr(s, "type", "") == "mes.upload_result"), None)
             if not mes_end_cfg:
                 self._logger.warning("未找到 mes.upload_result 步骤，无法执行失败直跳上报")

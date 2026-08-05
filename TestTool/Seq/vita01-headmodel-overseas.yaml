@@ -30,7 +30,7 @@ steps:
   retry_interval_ms: 1000
   condition: null
   expect: null
-  on_failure: continue
+  on_failure: fail
   at_config: null
   state_measurement_config: null
   manual_judgment_config: null
@@ -58,7 +58,7 @@ steps:
   retry_interval_ms: 1000
   condition: null
   expect: null
-  on_failure: continue
+  on_failure: fail
   at_config: null
   state_measurement_config: null
   manual_judgment_config: null

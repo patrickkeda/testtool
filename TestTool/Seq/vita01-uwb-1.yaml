@@ -25,7 +25,7 @@ steps:
     retries: 2
     condition: null
     expect: null
-    on_failure: continue
+    on_failure: fail
     at_config: null
     state_measurement_config: null
     manual_judgment_config: null
@@ -55,7 +55,7 @@ steps:
     retries: 1
     condition: null
     expect: null
-    on_failure: continue
+    on_failure: fail
     at_config: null
     state_measurement_config: null
     manual_judgment_config: null

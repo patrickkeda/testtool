@@ -69,7 +69,7 @@ steps:
     params: {}
     timeout: 8000
     retries: 2
-    on_failure: continue
+    on_failure: fail
 
   - id: step_1
     name: ScanSN
@@ -87,7 +87,7 @@ steps:
       expected_station: '${mes.effective_station}'
     timeout: 15000
     retries: 1
-    on_failure: continue
+    on_failure: fail
 
   - id: step_2
     name: PlcConnect

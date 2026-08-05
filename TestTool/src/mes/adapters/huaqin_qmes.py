@@ -170,6 +170,31 @@ class HuaqinQMESAdapter(MESAdapter):
         return payload.decode("latin1", errors="ignore")
 
     @staticmethod
+    def _sanitize_error_code(text: str, *, max_len: int = 200) -> str:
+        """将失败描述压成适合作为 ErrorCode 上传的单行短文本。"""
+        s = " ".join(str(text or "").split())
+        if not s:
+            return ""
+        if len(s) <= max_len:
+            return s
+        return s[: max(1, max_len - 1)] + "…"
+
+    def _resolve_upload_error_code(self, config: MESConfig, test_result: TestResult, port: str) -> str:
+        """FAIL 时优先用本次失败信息作 ErrorCode，避免 MES 只显示固定的 error。"""
+        if test_result.overall_result.value == "PASS":
+            return "0"
+        raw_ec = test_result.metadata.get("error_code") if isinstance(test_result.metadata, dict) else None
+        if raw_ec is not None and str(raw_ec).strip():
+            return str(raw_ec).strip()
+        msg = self._sanitize_error_code(str(test_result.error_message or ""))
+        if msg:
+            return msg
+        fail_default = str(
+            self._value_by_port(config, "failure_error_code", port, "error") or "error"
+        ).strip() or "error"
+        return fail_default
+
+    @staticmethod
     def _normalize_mes_error_message(message: str) -> str:
         """
         规范化 MES 返回的非标准英文错误文案，便于产线快速理解。
@@ -372,15 +397,17 @@ class HuaqinQMESAdapter(MESAdapter):
         tools_version = self._value_by_port(config, "tools_version", port, "V1.0")
         tools = f"{tools_name}_{tools_version}"
         sn_type = str(self._value_by_port(config, "sn_type", port, "1") or "1")
-        fail_default = str(self._value_by_port(config, "failure_error_code", port, "error") or "error").strip() or "error"
-        if test_result.overall_result.value == "PASS":
-            error_code = "0"
-        else:
-            raw_ec = test_result.metadata.get("error_code") if isinstance(test_result.metadata, dict) else None
-            error_code = str(raw_ec).strip() if raw_ec is not None and str(raw_ec).strip() else fail_default
+        error_code = self._resolve_upload_error_code(config, test_result, port)
+        err_desc = str(test_result.error_message or "").strip()
+        logger.info(
+            "QMES upload_result: sn=%s overall=%s ErrorCode=%s ErrorDesc=%s",
+            test_result.sn,
+            getattr(test_result.overall_result, "value", test_result.overall_result),
+            error_code,
+            (err_desc[:200] + "…") if len(err_desc) > 200 else err_desc,
+        )
 
         if use_mes_end:
-            err_desc = str(test_result.error_message or "")
             ret, s_info = self._dll_call(
                 "MesEnd",
                 self._h_mes,
@@ -648,7 +675,9 @@ class HuaqinQMESAdapter(MESAdapter):
         }
 
         if test_result.error_message:
+            # 多键兼容：不同 QMES/报表可能读 ERROR_MESSAGE 或 ErrorDesc
             all_data["ERROR_MESSAGE"] = test_result.error_message
+            all_data["ErrorDesc"] = test_result.error_message
 
         for idx, step in enumerate(test_result.test_steps, start=1):
             key_prefix = f"STEP_{idx}_{step.step_id or 'UNKNOWN'}"
